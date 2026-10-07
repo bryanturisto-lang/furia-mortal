@@ -1,0 +1,105 @@
+name: Compilar APK y publicar web
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: APK de Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Copiar el juego dentro de la app
+        run: |
+          mkdir -p android/app/src/main/assets/www
+          cp -r index.html style.css manifest.webmanifest js icons android/app/src/main/assets/www/
+
+      - name: Preparar la llave de firma
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/furia.p12"
+            ALIAS=$(keytool -list -v -storetype pkcs12 -keystore "$RUNNER_TEMP/furia.p12" -storepass "$KEYSTORE_PASSWORD" | grep -m1 'Alias name' | cut -d: -f2- | xargs)
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/furia.p12" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+            echo "Llave de firma lista (alias: $ALIAS)"
+          else
+            echo "Sin llave propia: se usará la firma de depuración"
+          fi
+
+      - name: Compilar
+        working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Nombrar el APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk FuriaMortal.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FuriaMortal-apk
+          path: FuriaMortal.apk
+
+      - name: Publicar en la página de descargas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ultima-version --yes --cleanup-tag || true
+          cat > notas.md <<'EOF'
+          ## Cómo instalarlo en Android
+
+          1. Descarga **FuriaMortal.apk** (abajo, en *Assets*).
+          2. Ábrelo. Si el teléfono pregunta, permite **instalar apps de fuentes desconocidas** para tu navegador o gestor de archivos.
+          3. Si aparece un aviso de Play Protect, toca **Más detalles → Instalar de todas formas** (la app no pide ningún permiso).
+          4. Abre **Furia Mortal** y juega en horizontal.
+
+          Para actualizar, descarga el APK nuevo e instálalo encima; no hace falta desinstalar.
+          EOF
+          gh release create ultima-version FuriaMortal.apk \
+            --target "${{ github.sha }}" \
+            --title "Furia Mortal · versión 1.${{ github.run_number }}" \
+            --notes-file notas.md \
+            --latest
+
+  web:
+    name: Versión web (GitHub Pages)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preparar sitio
+        run: |
+          mkdir _site
+          cp -r index.html style.css manifest.webmanifest sw.js js icons _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

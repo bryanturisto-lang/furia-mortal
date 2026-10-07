@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+// La firma viene de variables de entorno (secretos de GitHub). Sin ellas se usa la firma de depuración.
+def keystorePath = System.getenv('KEYSTORE_PATH')
+def hasReleaseKey = keystorePath != null && new File(keystorePath).exists()
+
+android {
+    namespace 'com.furiamortal.juego'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.furiamortal.juego'
+        minSdk 24
+        targetSdk 34
+        versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
+        versionName "1.${System.getenv('VERSION_CODE') ?: '0'}"
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            furia {
+                storeFile file(keystorePath)
+                storeType 'pkcs12'
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig hasReleaseKey ? signingConfigs.furia : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -1,0 +1,13 @@
+# Llave de firma del APK: NUNCA subirla al repositorio
+firma/
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Compilación de Android
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/assets/www/
+android/local.properties

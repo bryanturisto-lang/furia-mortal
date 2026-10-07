@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <title>Furia Mortal</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game" width="960" height="540"></canvas>
+
+  <!-- Controles táctiles (solo aparecen en teléfonos y tabletas) -->
+  <div id="touch" hidden>
+    <div id="dpad">
+      <span class="arr up">▲</span>
+      <span class="arr down">▼</span>
+      <span class="arr left">◀</span>
+      <span class="arr right">▶</span>
+      <div id="knob"></div>
+    </div>
+    <div id="pad">
+      <button class="b hp" data-a="hp">GA</button>
+      <button class="b hk" data-a="hk">PA</button>
+      <button class="b lp" data-a="lp">GB</button>
+      <button class="b lk" data-a="lk">PB</button>
+      <button class="b bl" data-a="bl">BLOQUEO</button>
+    </div>
+    <div id="sys">
+      <button data-sys="Escape" aria-label="Pausa">❚❚</button>
+      <button data-sys="Enter">START</button>
+      <button id="fs" aria-label="Pantalla completa">⛶</button>
+    </div>
+  </div>
+
+  <div id="rotate">
+    <div class="icon">↻</div>
+    <p>Gira el teléfono<br>para jugar</p>
+  </div>
+
+  <script src="js/util.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/fighter.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/stage.js"></script>
+  <script src="js/game.js"></script>
+  <script>
+    // Instalable y jugable sin internet (solo cuando se sirve desde una web real)
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
