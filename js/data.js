@@ -7,8 +7,11 @@
 const NINJA = (tail) => ({ head: 'hood', torso: 'vest', arms: 'sleeve', tail: { color: tail, len: 4, width: 4 } });
 
 const CHARACTERS = [
-  { id: 'kaizen', name: 'KAIZEN', color: '#f2c21b', dark: '#9a7400', skin: '#d8a27c', eyes: '#ffffff', glow: true,
-    look: NINJA('#9a7400'), stance: 'ninja', intro: 'taunt', win: 'winPoint',
+  { id: 'kaizen', name: 'KAIZEN', color: '#b81f18', dark: '#5e0f0b', skin: '#c98a62', eyes: '#ffb030', glow: true,
+    look: { head: 'mask', torso: 'warrior', arms: 'warrior', pants: '#1c1a1f', boots: '#2a2326', hair: '#151214',
+      lava: '#ff7a1a', mask: '#2b2629', armor: '#211d22', knee: true, pauldron: true, collar: true, tabard: true,
+      chains: true, embers: true, bulk: 1.04, tail: { color: '#a81c14', len: 7, width: 9, tattered: true } },
+    stance: 'ninja', intro: 'taunt', win: 'winPoint',
     bio: 'Espectro vengativo del inframundo.',
     specials: [
       { name: 'Lanza Infernal', input: ['B', 'F'], btn: 'hp', kind: 'proj', proj: 'lanza', ai: 'far' },
@@ -165,7 +168,7 @@ const DASH = {
 
 // Proyectiles. y = altura relativa a los pies (por defecto -120). effect: qué le pasa al rival al recibirlo.
 const PROJ = {
-  lanza:     { speed: 15, dmg: 5,  w: 34, h: 16, color: '#f2c21b', range: 560, effect: 'pull', style: 'lanza' },
+  lanza:     { speed: 15, dmg: 5,  w: 34, h: 16, color: '#ff7a1a', range: 560, effect: 'pull', style: 'lanza' },
   hielo:     { speed: 8,  dmg: 4,  w: 34, h: 34, color: '#9fe0ff', effect: 'freeze', style: 'ice' },
   acido:     { speed: 7,  dmg: 12, w: 34, h: 28, color: '#7dff4a', effect: 'stun', stun: 26, style: 'acid' },
   rayo:      { speed: 17, dmg: 9,  w: 60, h: 22, color: '#bff4ff', effect: 'knock', style: 'bolt', pose: 'cast' },

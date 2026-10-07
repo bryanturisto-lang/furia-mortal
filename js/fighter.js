@@ -6,7 +6,7 @@ const LYING = new Set(['down', 'dead', 'launched', 'getup']);
 const NO_HURT = new Set(['down', 'getup', 'dead', 'held', 'intro']);
 const THROWABLE = new Set(['idle', 'walk', 'run', 'crouch', 'block', 'cblock', 'attack', 'recover', 'land', 'prejump', 'dizzy', 'hit']);
 const LIMBS = ['ff', 'bf', 'fh', 'bh'];
-const TAIL_ANCHOR = { hood: [-12, -2], hair: [-12, -6], bun: [-16, -9], long: [-10, -6] };
+const TAIL_ANCHOR = { hood: [-12, -2], hair: [-12, -6], bun: [-16, -9], long: [-10, -6], mask: [-10, 10] };
 
 function clonePose(p) {
   return { h: p.h, lean: p.lean, rot: p.rot || 0, ff: [...p.ff], bf: [...p.bf], fh: [...p.fh], bh: [...p.bh] };
@@ -58,16 +58,101 @@ function basePalette(ch) {
     pants, pants2: shade(pants, 0.65), main: ch.color, dark: ch.dark, skin: ch.skin, skin2: shade(ch.skin, 0.75),
     eyes: ch.eyes, boots, boots2: shade(boots, 0.6), hair: L.hair || '#141414', band: L.band || ch.color,
     metal: '#aab3be', metal2: '#6c7680', straw: '#d8c890',
+    lava: L.lava || ch.color, armor: L.armor || '#211d22', armor2: shade(L.armor || '#211d22', 0.7),
+    mask: L.mask || '#2b2629', plate: '#3c363b', plate2: '#262226', spike: '#9a9498',
+    bracer: '#2a2426', bracer2: '#1c181a', glove: '#181416', tattoo: '#8a1a10', strap: '#5a3a24',
   };
   return ch._pal;
 }
 function flatPalette(c, eyes) {
   return { pants: c, pants2: c, main: c, dark: c, skin: c, skin2: c, eyes: eyes || c, boots: c, boots2: c,
-    hair: c, band: c, metal: c, metal2: c, straw: c };
+    hair: c, band: c, metal: c, metal2: c, straw: c, lava: c, armor: c, armor2: c, mask: c, plate: c, plate2: c,
+    spike: c, bracer: c, bracer2: c, glove: c, tattoo: c, strap: c, flat: true };
 }
 const FLASH_PAL = flatPalette('#ffffff');
 const FROZEN_PAL = { pants: '#5d8fc0', pants2: '#4a7aa8', main: '#c8ecff', dark: '#86bde6', skin: '#e4f6ff', skin2: '#b8e0f8',
-  eyes: '#fff', boots: '#9fd0f0', boots2: '#7ab0d8', hair: '#86bde6', band: '#c8ecff', metal: '#d0f0ff', metal2: '#9ac8e8', straw: '#d0f0ff' };
+  eyes: '#fff', boots: '#9fd0f0', boots2: '#7ab0d8', hair: '#86bde6', band: '#c8ecff', metal: '#d0f0ff', metal2: '#9ac8e8', straw: '#d0f0ff',
+  lava: '#e8fbff', armor: '#7aa8d0', armor2: '#6090b8', mask: '#9ac8e8', plate: '#a8d4f0', plate2: '#86bde6', spike: '#e0f6ff',
+  bracer: '#7aa8d0', bracer2: '#6090b8', glove: '#5d8fc0', tattoo: '#9ac8e8', strap: '#86bde6', flat: true };
+
+// Línea de lava brillante (grietas incandescentes)
+function lavaLine(ctx, pal, pts, w = 2) {
+  ctx.save();
+  if (!pal.flat) { ctx.shadowColor = pal.lava; ctx.shadowBlur = 7; }
+  ctx.strokeStyle = pal.lava;
+  ctx.lineWidth = w;
+  ctx.beginPath();
+  ctx.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Púa triangular sobre un segmento (de a hacia b), apuntando hacia el lado "side"
+function spikeOn(ctx, ax, ay, bx, by, t0, t1, len, side, color) {
+  const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy) || 1, px = -dy / l * side, py = dx / l * side;
+  const x0 = ax + dx * t0, y0 = ay + dy * t0, x1 = ax + dx * t1, y1 = ay + dy * t1;
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  ctx.fillStyle = color;
+  poly(ctx, [x0 + px * 4, y0 + py * 4, mx + px * len + dx / l * 3, my + py * len + dy / l * 3, x1 + px * 4, y1 + py * 4]);
+}
+
+// Hoz curva (punta de las cadenas de fuego)
+function drawSickle(ctx, x, y, ang, pal, s = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.scale(s, s);
+  if (!pal.flat) { ctx.shadowColor = pal.lava; ctx.shadowBlur = 10; }
+  ctx.fillStyle = pal.flat ? pal.spike : '#d8d2cc';
+  ctx.beginPath();
+  ctx.moveTo(-2, 0);
+  ctx.quadraticCurveTo(10, -4, 20, -16);
+  ctx.quadraticCurveTo(14, -2, 4, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = pal.lava;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(2, -1); ctx.quadraticCurveTo(11, -5, 20, -16); ctx.stroke();
+  ctx.restore();
+}
+
+// Cadena de fuego a lo largo de una lista de puntos [x0,y0,x1,y1,...]
+function drawFireChain(ctx, pal, pts, t) {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = pal.flat ? pal.plate2 : '#2a1208';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  ctx.stroke();
+  if (!pal.flat) {
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowColor = '#ff6a10';
+    ctx.shadowBlur = 12;
+  }
+  ctx.strokeStyle = pal.lava;
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([5, 4]);
+  ctx.lineDashOffset = -t * 0.8;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (!pal.flat) {
+    // lenguas de fuego a lo largo de la cadena
+    ctx.fillStyle = 'rgba(255,150,40,0.55)';
+    for (let i = 2; i < pts.length; i += 2) {
+      const f = Math.sin(t * 0.5 + i) * 0.5 + 0.5;
+      ctx.beginPath();
+      ctx.ellipse(pts[i], pts[i + 1] - 3 - f * 3, 2.5, 4 + f * 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+  const n = pts.length;
+  drawSickle(ctx, pts[n - 2], pts[n - 1], Math.atan2(pts[n - 1] - pts[n - 3], pts[n - 2] - pts[n - 4]), pal);
+}
 const tintCache = {};
 function fighterPalette(ch, o) {
   if (o.flash) return FLASH_PAL;
@@ -77,14 +162,26 @@ function fighterPalette(ch, o) {
 }
 
 // ---------- Dibujo de partes ----------
-function drawLeg(ctx, rx, ry, k, pal, back, th) {
+function drawLeg(ctx, rx, ry, k, pal, back, th, look = {}) {
   const [kx, ky, ax, ay] = k;
   const pants = back ? pal.pants2 : pal.pants, boot = back ? pal.boots2 : pal.boots;
-  seg(ctx, rx, ry, kx, ky, 17 * th, pants);
-  seg(ctx, kx, ky, ax, ay, 14 * th, pants);
+  const baggy = look.torso === 'warrior' ? 1.15 : 1;
+  seg(ctx, rx, ry, kx, ky, 17 * th * baggy, pants);
+  seg(ctx, kx, ky, ax, ay, 14 * th * baggy, pants);
   seg(ctx, lerp(kx, ax, 0.45), lerp(ky, ay, 0.45), ax, ay, 15 * th, boot);
   const dx = ax - kx, dy = ay - ky, l = Math.hypot(dx, dy) || 1;
   seg(ctx, ax, ay, ax + dy / l * 13, ay - dx / l * 13, 9 * th, boot);
+  if (look.knee) {
+    // vendas rojas en la bota
+    seg(ctx, lerp(kx, ax, 0.72), lerp(ky, ay, 0.72), lerp(kx, ax, 0.84), lerp(ky, ay, 0.84), 16 * th, back ? pal.dark : pal.main);
+    // grieta de lava en la espinilla
+    if (!back) lavaLine(ctx, pal, [lerp(kx, ax, 0.48) + 3, lerp(ky, ay, 0.48), lerp(kx, ax, 0.6) + 5, lerp(ky, ay, 0.6), lerp(kx, ax, 0.68) + 2, lerp(ky, ay, 0.68)], 1.8);
+    // rodillera con púa hacia adelante
+    ctx.fillStyle = back ? pal.plate2 : pal.plate;
+    circle(ctx, kx, ky, 9 * th);
+    spikeOn(ctx, rx, ry, kx, ky, 0.82, 1, 11, -1, back ? pal.plate : pal.spike);
+    if (!back) lavaLine(ctx, pal, [kx - 4, ky - 3, kx + 1, ky + 1, kx + 4, ky - 2], 1.5);
+  }
 }
 
 function drawArm(ctx, rx, ry, a, pal, back, type, th) {
@@ -97,13 +194,23 @@ function drawArm(ctx, rx, ry, a, pal, back, type, th) {
       up = fore = fist = back ? pal.metal2 : pal.metal; cuff = back ? '#3a3e46' : '#5a626c'; uw = 15; fw = 14; break;
     case 'robe':
       up = back ? pal.dark : pal.main; fore = fist = back ? pal.skin2 : pal.skin; cuff = null; uw = 17; break;
+    case 'warrior':
+      up = back ? pal.skin2 : pal.skin; fore = back ? pal.bracer2 : pal.bracer; cuff = back ? pal.dark : pal.main;
+      fist = pal.glove; uw = 14; fw = 13; break;
     default:
       up = cuff = back ? pal.dark : pal.main; fore = fist = back ? pal.pants2 : pal.pants;
   }
   seg(ctx, rx, ry, ex, ey, uw * th, up);
   seg(ctx, ex, ey, hx, hy, fw * th, fore);
   if (type === 'robe') seg(ctx, ex, ey, lerp(ex, hx, 0.4), lerp(ey, hy, 0.4), 18 * th, up);
-  else seg(ctx, lerp(ex, hx, 0.55), lerp(ey, hy, 0.55), hx, hy, (fw + 1) * th, cuff);
+  else if (type === 'warrior') {
+    // tatuaje en el brazo, vendas rojas y púas en el brazalete
+    if (!back) lavaLine(ctx, { lava: pal.tattoo, flat: true }, [lerp(rx, ex, 0.25) + 2, lerp(ry, ey, 0.25), lerp(rx, ex, 0.5) - 3, lerp(ry, ey, 0.5), lerp(rx, ex, 0.75) + 2, lerp(ry, ey, 0.75)], 2.2);
+    seg(ctx, ex, ey, lerp(ex, hx, 0.18), lerp(ey, hy, 0.18), (fw + 2) * th, cuff);
+    seg(ctx, lerp(ex, hx, 0.78), lerp(ey, hy, 0.78), lerp(ex, hx, 0.9), lerp(ey, hy, 0.9), (fw + 2) * th, cuff);
+    spikeOn(ctx, ex, ey, hx, hy, 0.3, 0.48, 9, -1, back ? pal.plate : pal.spike);
+    spikeOn(ctx, ex, ey, hx, hy, 0.5, 0.68, 8, -1, back ? pal.plate : pal.spike);
+  } else seg(ctx, lerp(ex, hx, 0.55), lerp(ey, hy, 0.55), hx, hy, (fw + 1) * th, cuff);
   ctx.fillStyle = fist;
   circle(ctx, hx, hy, 7.5 * th);
 }
@@ -160,6 +267,25 @@ function drawHead(ctx, ch, pal, o) {
       ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 12.8, -0.1, Math.PI * 0.6); ctx.closePath(); ctx.fill();
       eyes(7, 11.5, -3, 1.6);
       break;
+    case 'mask':
+      // pelo negro en puntas
+      ctx.fillStyle = pal.hair;
+      poly(ctx, [-13, 2, -26, -6, -14, -9, -22, -19, -8, -14, -9, -26, 1, -15, 6, -25, 9, -13, 17, -15, 13, -5]);
+      circle(ctx, -2, -3, 13);
+      // cara
+      ctx.fillStyle = pal.skin;
+      ctx.beginPath(); ctx.arc(1, 1, 12, -Math.PI * 0.42, Math.PI * 0.62); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = pal.hair;
+      poly(ctx, [-2, -12, 8, -13, 14, -6, 6, -9, -2, -6]);
+      // máscara metálica con grietas de lava
+      ctx.fillStyle = pal.mask;
+      poly(ctx, [-3, -1, 14, -1, 13.5, 7, 6, 12, -4, 10]);
+      lavaLine(ctx, pal, [4, 0, 7, 5, 5, 10], 1.6);
+      lavaLine(ctx, pal, [10, 0, 12, 5], 1.4);
+      // ojos encendidos y ceño
+      eyes(7, 12, -4, 1.8);
+      seg(ctx, 3, -7.5, 13.5, -5.5, 2, pal.hair);
+      break;
     default: // capucha ninja
       ctx.fillStyle = pal.main; circle(ctx, 0, 0, 13.5);
       ctx.fillStyle = pal.skin; ctx.fillRect(1, -6, 12, 7);
@@ -184,7 +310,14 @@ function drawFigure(ctx, ch, p, o = {}) {
   const ba = ik(sx - 6, sy + 3, sx + p.bh[0], sy + p.bh[1], UARM, FARM, 1);
   const fa = ik(sx + 4, sy, sx + p.fh[0], sy + p.fh[1], UARM, FARM, 1);
 
-  drawLeg(ctx, -5, 0, bl, pal, true, th);
+  // faldón trasero desgarrado
+  if (look.tabard) {
+    const bx0 = ux * 8, by0 = uy * 8, sw = clamp(p.bf[0] * 0.3, -24, 6);
+    ctx.fillStyle = pal.dark;
+    poly(ctx, [bx0 - 15 * nx, by0 - 15 * ny, bx0 - 2 * nx, by0 - 2 * ny, -4 + sw, 64, -9 + sw, 76, -14 + sw, 66, -20 + sw, 80, -24 + sw, 62]);
+  }
+
+  drawLeg(ctx, -5, 0, bl, pal, true, th, look);
   drawArm(ctx, sx - 6, sy + 3, ba, pal, true, look.arms, th);
 
   // torso
@@ -203,6 +336,19 @@ function drawFigure(ctx, ch, p, o = {}) {
       seg(ctx, sx + 4 * nx, sy + 4 * ny, bx + 10 * nx, by + 10 * ny, 3, pal.dark);
       seg(ctx, bx - w0 * nx, by - w0 * ny, bx + w0 * nx, by + w0 * ny, 7, pal.dark);
       break;
+    case 'warrior':
+      // chaleco blindado negro, correas de cuero, grieta de lava y faja roja
+      ctx.fillStyle = pal.armor; poly(ctx, T);
+      seg(ctx, sx * 0.62 - 18 * nx, sy * 0.62 - 18 * ny, sx * 0.62 + 18 * nx, sy * 0.62 + 18 * ny, 2, pal.armor2);
+      seg(ctx, sx * 0.38 - 16 * nx, sy * 0.38 - 16 * ny, sx * 0.38 + 16 * nx, sy * 0.38 + 16 * ny, 2, pal.armor2);
+      seg(ctx, sx - 17 * nx, sy - 17 * ny, ux * 12 + 13 * nx, uy * 12 + 13 * ny, 4, pal.strap);
+      lavaLine(ctx, pal, [ux * 14 + 3 * nx, uy * 14 + 3 * ny, sx * 0.45 + 6 * nx, sy * 0.45 + 6 * ny,
+        sx * 0.62 + 2 * nx, sy * 0.62 + 2 * ny, sx * 0.85 + 5 * nx, sy * 0.85 + 5 * ny], 2.4);
+      seg(ctx, bx - w0 * nx, by - w0 * ny, bx + w0 * nx, by + w0 * ny, 11, pal.main);
+      seg(ctx, bx - w0 * nx + ux * 5, by - w0 * ny + uy * 5, bx + w0 * nx + ux * 5, by + w0 * ny + uy * 5, 3, pal.strap);
+      ctx.fillStyle = pal.spike;
+      circle(ctx, bx + 6 * nx, by + 6 * ny, 4);
+      break;
     case 'armor':
       ctx.fillStyle = pal.metal; poly(ctx, T);
       seg(ctx, ux * 12, uy * 12, sx - ux * 6, sy - uy * 6, 6, pal.main);
@@ -220,7 +366,9 @@ function drawFigure(ctx, ch, p, o = {}) {
 
   // cuello y cabeza
   if (!o.headless) {
-    seg(ctx, sx, sy, sx + ux * 10, sy + uy * 10, 13 * th, look.torso === 'bare' || look.head === 'bald' ? pal.skin : pal.pants);
+    seg(ctx, sx, sy, sx + ux * 10, sy + uy * 10, 13 * th, look.torso === 'bare' || look.head === 'bald' || look.head === 'mask' ? pal.skin : pal.pants);
+    // bufanda roja enrollada al cuello
+    if (look.collar) seg(ctx, sx - 11 * nx + ux * 4, sy - 11 * ny + uy * 4, sx + 11 * nx + ux * 7, sy + 11 * ny + uy * 7, 11, pal.main);
     const hx = sx + ux * 21 + nx * 2, hy = sy + uy * 21 + ny * 2;
     ctx.save();
     ctx.translate(hx, hy);
@@ -232,10 +380,19 @@ function drawFigure(ctx, ch, p, o = {}) {
     circle(ctx, sx + ux * 4, sy + uy * 4, 7);
   }
 
-  drawLeg(ctx, 6, 0, fl, pal, false, th);
+  drawLeg(ctx, 6, 0, fl, pal, false, th, look);
 
   // faldón / túnica
-  if (look.torso === 'robe') {
+  if (look.tabard) {
+    // faldón rojo desgarrado con el emblema en naranja
+    const sw = clamp(p.ff[0] * 0.3, -6, 26);
+    ctx.fillStyle = pal.main;
+    poly(ctx, [bx, by, bx + 16 * nx, by + 16 * ny, 18 + sw, 62, 14 + sw, 78, 9 + sw, 66, 4 + sw, 82, 0 + sw, 64, -3 + sw, 72]);
+    ctx.fillStyle = pal.flat ? pal.main : '#e0601c';
+    poly(ctx, [6 + sw * 0.5, 30, 11 + sw * 0.55, 38, 6 + sw * 0.6, 46, 1 + sw * 0.55, 38]);
+    ctx.fillStyle = pal.flat ? pal.main : pal.dark;
+    poly(ctx, [6 + sw * 0.55, 34, 8 + sw * 0.55, 38, 6 + sw * 0.6, 42, 4 + sw * 0.55, 38]);
+  } else if (look.torso === 'robe') {
     ctx.fillStyle = pal.main;
     poly(ctx, [bx - 16 * nx, by - 16 * ny, bx + 16 * nx, by + 16 * ny, fl[0] + 10, fl[1] + 12, bl[0] - 10, bl[1] + 12]);
     seg(ctx, fl[0] + 10, fl[1] + 12, bl[0] - 10, bl[1] + 12, 3, pal.dark);
@@ -246,6 +403,35 @@ function drawFigure(ctx, ch, p, o = {}) {
   }
 
   drawArm(ctx, sx + 4, sy, fa, pal, false, look.arms, th);
+
+  // hombrera con púas sobre el hombro delantero
+  if (look.pauldron) {
+    // un poco más abajo y hacia atrás del hombro, para no tapar la cara
+    const px = sx + 1 - ux * 9, py = sy - uy * 9;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(L);
+    ctx.fillStyle = pal.spike;
+    poly(ctx, [-12, -2, -21, -10, -8, -7]);
+    poly(ctx, [-6, -6, -11, -16, 0, -8]);
+    poly(ctx, [1, -7, -1, -15, 6, -7]);
+    ctx.fillStyle = pal.plate;
+    ctx.beginPath(); ctx.ellipse(-2, 0, 12, 8, -0.15, 0, Math.PI * 2); ctx.fill();
+    lavaLine(ctx, pal, [-10, 2, -3, 4, 4, 1], 1.5);
+    ctx.restore();
+  }
+
+  // cadenas de fuego fijas (en retratos); en combate son dinámicas, ver Fighter.updateChains
+  if (look.chains && o.staticChains) {
+    for (const h of [fa, ba]) {
+      const hx = h[2], hy = h[3], pts = [];
+      for (let i = 0; i <= 6; i++) {
+        const t = i / 6;
+        pts.push(hx + Math.sin(t * 2.6) * 26, hy + t * 64);
+      }
+      drawFireChain(ctx, pal, pts, 0);
+    }
+  }
 }
 
 function drawCharAt(ctx, ch, pose, x, y, facing = 1, scale = 1, o = {}) {
@@ -253,7 +439,7 @@ function drawCharAt(ctx, ch, pose, x, y, facing = 1, scale = 1, o = {}) {
   ctx.translate(x, y);
   ctx.scale(facing * scale * (ch.look.bulk || 1), scale * (ch.look.bulk || 1));
   ctx.translate(0, -pose.h);
-  drawFigure(ctx, ch, pose, o);
+  drawFigure(ctx, ch, pose, Object.assign({ staticChains: true }, o));
   ctx.restore();
 }
 
@@ -290,7 +476,7 @@ class Fighter {
       tint: null, pulled: 0, netted: 0, dizzyOnLand: false, running: false, chain: 0,
       floating: false, invis: 0, grab: null, heldMode: null, heldT: 0, bounced: false, hitLow: false, jumpDir: 0,
       trailOn: false, trailColor: null, trail: [], scarf: null, headless: false, melt: 0, fxScale: 1, spinT: 0,
-      headPos: [x, GROUND_Y - 170], eruptX: 0, spName: '', spNameT: 0, lastBtn: null, seqShown: [], seqShownT: -999,
+      headPos: [x, GROUND_Y - 170], eruptX: 0, spName: '', spNameT: 0, lastBtn: null, seqShown: [], seqShownT: -999, chains: null,
     });
     this.pose = clonePose(this.stance.idle);
   }
@@ -395,6 +581,12 @@ class Fighter {
     }
     if (this.state !== 'attack') this.chain = 0;
     if (CONTROL_STATES.has(this.state) || this.state === 'down') this.comboCount = 0;
+
+    // brasas que se desprenden del cuerpo
+    if (this.ch.look.embers && this.t % 5 === 0 && !this.hidden && !this.gone && this.invis <= 0) {
+      game.fx.add({ x: this.x + rand(-22, 22), y: this.y - rand(30, 170) * this.bulk, vx: rand(-0.4, 0.4), vy: rand(-1.6, -0.6),
+        g: -0.01, life: rand(20, 40), size: rand(1.2, 2.6), color: chance(0.5) ? '#ff8a1a' : '#ffcc40', kind: 'glow' });
+    }
 
     this.physics(game);
     this.animate();
@@ -904,6 +1096,15 @@ class Fighter {
       this.updateTail(wx, wy, tail);
     }
 
+    if (this.ch.look.chains) {
+      if (this.hidden || this.gone) this.chains = null;
+      else {
+        const fa = ik(ux * TORSO + 4, uy * TORSO, ux * TORSO + p.fh[0], uy * TORSO + p.fh[1], UARM, FARM, 1);
+        const ba = ik(ux * TORSO - 6, uy * TORSO + 3, ux * TORSO + p.bh[0], uy * TORSO + p.bh[1], UARM, FARM, 1);
+        this.updateChains([this.toWorld(fa[2], fa[3]), this.toWorld(ba[2], ba[3])]);
+      }
+    }
+
     if (this.t % 2 === 0) {
       if (this.trailOn && !this.hidden) {
         this.trail.push({ x: this.x, y: this.y, facing: this.facing, pose: clonePose(this.pose),
@@ -911,6 +1112,44 @@ class Fighter {
         if (this.trail.length > 5) this.trail.shift();
       } else if (this.trail.length) this.trail.shift();
     }
+  }
+
+  // Dos cadenas de fuego que cuelgan de las manos (cuerdas con física simple)
+  updateChains(hands) {
+    const n = 7, segL = 10;
+    if (!this.chains || hands.some((h, k) => Math.hypot(this.chains[k][0].x - h[0], this.chains[k][0].y - h[1]) > 80)) {
+      this.chains = hands.map(([hx, hy]) => Array.from({ length: n }, (_, i) =>
+        ({ x: hx + this.facing * i * 3, y: hy + i * segL, px: hx + this.facing * i * 3, py: hy + i * segL })));
+    }
+    this.chains.forEach((c, k) => {
+      const [hx, hy] = hands[k];
+      c[0].x = c[0].px = hx;
+      c[0].y = c[0].py = hy;
+      for (let i = 1; i < n; i++) {
+        const q = c[i];
+        const vx = (q.x - q.px) * 0.9, vy = (q.y - q.py) * 0.9;
+        q.px = q.x; q.py = q.y;
+        q.x += vx + Math.sin(this.t * 0.06 + i * 0.7 + k * 2) * 0.25 * this.facing;
+        q.y += vy + 0.55;
+      }
+      for (let it = 0; it < 3; it++) {
+        for (let i = 1; i < n; i++) {
+          const a = c[i - 1], b = c[i];
+          const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, diff = (d - segL) / d;
+          if (i === 1) { b.x -= dx * diff; b.y -= dy * diff; }
+          else { a.x += dx * diff * 0.5; a.y += dy * diff * 0.5; b.x -= dx * diff * 0.5; b.y -= dy * diff * 0.5; }
+        }
+      }
+      for (const q of c) if (q.y > GROUND_Y + 2) q.y = GROUND_Y + 2;
+    });
+  }
+
+  drawChain(ctx, camX, k) {
+    if (!this.chains) return;
+    const pal = fighterPalette(this.ch, { flash: this.flash > 1, frozen: this.frozen > 0, tint: this.tint });
+    const pts = [];
+    for (const q of this.chains[k]) pts.push(q.x - camX, q.y);
+    drawFireChain(ctx, pal, pts, this.t);
   }
 
   updateTail(ax, ay, tail) {
@@ -983,6 +1222,7 @@ class Fighter {
 
     ctx.globalAlpha = alpha;
     if (this.scarf && !this.headless) this.drawTail(ctx, camX);
+    if (this.chains) this.drawChain(ctx, camX, 1);
 
     const melting = this.melt > 0;
     if (melting) {
@@ -996,6 +1236,7 @@ class Fighter {
       lying: LYING.has(this.state), spinT: this.spinT },
       { flash: this.flash > 1, frozen: this.frozen > 0, tint: this.tint, headless: this.headless });
     if (melting) ctx.restore();
+    if (this.chains && !melting) this.drawChain(ctx, camX, 0);
     ctx.globalAlpha = 1;
 
     // red de captura
@@ -1032,6 +1273,16 @@ class Fighter {
       ctx.moveTo(s[i - 1].x - camX, s[i - 1].y);
       ctx.lineTo(s[i].x - camX, s[i].y);
       ctx.stroke();
+    }
+    // extremos deshilachados
+    if (tail.tattered) {
+      ctx.lineWidth = 2;
+      for (const off of [-4, 3, 7]) {
+        ctx.beginPath();
+        ctx.moveTo(s[s.length - 3].x - camX, s[s.length - 3].y + off * 0.5);
+        for (let i = s.length - 2; i < s.length; i++) ctx.lineTo(s[i].x - camX + off * 0.6, s[i].y + off);
+        ctx.stroke();
+      }
     }
   }
 

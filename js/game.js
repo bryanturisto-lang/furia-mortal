@@ -774,12 +774,15 @@ const Game = {
       ctx.shadowBlur = 18;
       switch (p.spec.style) {
         case 'lanza': {
+          // cadena de fuego que sale de la mano y termina en una hoz
+          ctx.shadowBlur = 0;
           const o = p.owner, hx = o.x - camX + o.facing * 50, hy = o.y - 140;
-          ctx.strokeStyle = '#8a7a5a'; ctx.lineWidth = 3; ctx.setLineDash([6, 4]);
-          ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(x, y); ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.fillStyle = '#e8e8f0';
-          poly(ctx, [x + d * 20, y, x - d * 4, y - 9, x + d * 2, y, x - d * 4, y + 9]);
+          const pts = [];
+          for (let i = 0; i <= 10; i++) {
+            const t = i / 10;
+            pts.push(lerp(hx, x, t), lerp(hy, y, t) + Math.sin(t * Math.PI) * 10 * Math.sin(p.t * 0.6));
+          }
+          drawFireChain(ctx, basePalette(o.ch), pts, p.t * 3);
           break;
         }
         case 'ice': {
