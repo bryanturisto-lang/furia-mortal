@@ -264,8 +264,20 @@ const Game = {
     }
   },
 
+  // Efecto al activar una ULTRA: pantalla oscura, letrero y sonido
+  ultraStart(f) {
+    this.dark = 0.7;
+    this.hitstop = 10;
+    this.banner(`¡${f.spName.toUpperCase()}!`, { life: 70, size: 54, y: H * 0.3, keep: true,
+      colors: ['#ffffff', '#bfefff', '#2f6fd8'] });
+    Sound.special('freeze');
+    Sound.special('viento');
+    Sound.say(f.spName, 0.4, 0.9);
+  },
+
   step(ctrl) {
     this.fx.update();
+    if (this.state !== 'fatality' && this.dark > 0) this.dark = this.dark > 0.02 ? this.dark * 0.96 : 0;
     if (this.shake > 0) this.shake = this.shake > 0.5 ? this.shake * 0.86 : 0;
     if (this.combo && --this.combo.t <= 0) this.combo = null;
     if (this.hitstop > 0) { this.hitstop--; return; }
@@ -526,9 +538,14 @@ const Game = {
   // ---------------- PROYECTILES ----------------
   spawnProjectile(owner, type) {
     const sp = PROJ[type], n = sp.count || 1;
+    const opp = this.f[owner === this.f[0] ? 1 : 0];
+    let x = owner.x + owner.facing * 58;
+    if (sp.offset) x = owner.x + owner.facing * sp.offset;  // aparece a cierta distancia (pared)
+    if (sp.atTarget) x = opp.x;                              // aparece sobre el rival (tormenta)
     for (let i = 0; i < n; i++) {
       const yOff = sp.offsets ? sp.offsets[i] : (sp.y || -120);
-      this.projectiles.push({ owner, type, spec: sp, x: owner.x + owner.facing * 58, x0: owner.x, y: owner.y + yOff,
+      const y = sp.offset || sp.atTarget ? GROUND_Y + yOff : owner.y + yOff;
+      this.projectiles.push({ owner, type, spec: sp, x, x0: owner.x, y, hits: 0, lastHit: -99,
         dir: owner.facing, speed: sp.speed, vx: owner.facing * sp.speed, vy: sp.vy || 0, t: 0,
         delay: i * (sp.gap || 0), dead: false });
       owner.projCount++;
@@ -558,6 +575,13 @@ const Game = {
         continue;
       }
       p.t++;
+      if (sp.life && p.t > sp.life) {
+        // al terminar la tormenta, el rival queda congelado
+        const opp = this.f[p.owner === this.f[0] ? 1 : 0];
+        if (sp.finalFreeze && p.hits > 0 && opp.state === 'hit' && opp.hp > 0) { opp.frozen = 90; Sound.special('freeze'); }
+        p.dead = true;
+        continue;
+      }
       if (sp.style === 'erupt') {
         if (p.t > 14) { p.dead = true; continue; }
         for (let i = 0; i < 4; i++) {
@@ -579,7 +603,10 @@ const Game = {
       if (!p.noClash) {
         for (const q of ps) {
           if (q !== p && !q.dead && !q.noClash && q.delay <= 0 && q.owner !== p.owner && overlap(box, this.projBox(q))) {
-            p.dead = q.dead = true;
+            // la pared de hielo resiste: solo se destruye lo que choca contra ella
+            if (!sp.wall) p.dead = true;
+            if (!q.spec.wall) q.dead = true;
+            if (sp.wall && q.spec.wall) p.dead = q.dead = true;
             this.fx.burst(p.x, p.y, sp.color, 20);
             this.fx.burst(q.x, q.y, q.spec.color, 20);
             Sound.block();
@@ -590,6 +617,15 @@ const Game = {
       const opp = this.f[p.owner === this.f[0] ? 1 : 0];
       if (!overlap(box, opp.hurtbox())) continue;
       if (sp.explode) { this.explode(p); continue; }
+      if (sp.multi) {
+        // golpea varias veces mientras dure
+        if (p.t - p.lastHit >= sp.multi) { p.lastHit = p.t; p.hits++; this.projHit(p, opp, opp.x, opp.y - 100); }
+        continue;
+      }
+      if (sp.wall) {
+        if (!p.hits) { p.hits = 1; this.projHit(p, opp, opp.x, opp.y - 60); }
+        continue;
+      }
       p.dead = true;
       this.projHit(p, opp, p.x, p.y);
     }
@@ -616,6 +652,17 @@ const Game = {
         this.fx.add({ x: p.x + rand(-20, 20), y: p.y + rand(-50, 50), vx: p.vx * 0.3, vy: rand(-2, -0.5), g: 0,
           life: 14, size: rand(2, 4), color: '#ffffff', kind: 'glow' });
         break;
+      case 'icewall':
+        if (p.t % 3 === 0) this.fx.add({ x: p.x + rand(-30, 30), y: GROUND_Y - rand(0, 180), vx: rand(-0.5, 0.5), vy: rand(-1, 0.3),
+          g: 0, life: 18, size: rand(1.5, 3), color: '#e8fbff', kind: 'glow' });
+        break;
+      case 'storm':
+        for (let i = 0; i < 3; i++) {
+          const a = rand(0, Math.PI * 2), r = rand(30, 80);
+          this.fx.add({ x: p.x + Math.cos(a) * r, y: p.y + rand(-110, 110), vx: -Math.sin(a) * 4, vy: rand(-2, 0), g: 0,
+            life: rand(10, 20), size: rand(2, 4), color: chance(0.5) ? '#ffffff' : '#9fe0ff', kind: 'glow' });
+        }
+        break;
       default:
         this.fx.trail(p.x - p.vx, p.y, sp.color);
     }
@@ -623,8 +670,8 @@ const Game = {
 
   projHit(p, opp, x, y) {
     const sp = p.spec, dir = p.dir;
-    const m = { dmg: sp.dmg, level: sp.level || 'mid', kb: 5, stun: sp.stun || 18,
-      knock: sp.effect === 'knock', launch: sp.effect === 'launch', heavy: true };
+    const m = { dmg: sp.dmg, level: sp.level || 'mid', kb: sp.multi ? 0.5 : 5, stun: sp.stun || 18,
+      knock: sp.effect === 'knock', launch: sp.effect === 'launch', heavy: true, unblockable: !!sp.unblockable };
     const res = opp.takeHit(m, dir, this);
     if (res === 'none') return;
     this.impact(res, x, y, dir, m, opp);
@@ -786,9 +833,50 @@ const Game = {
           break;
         }
         case 'ice': {
-          const g = ctx.createRadialGradient(x, y, 2, x, y, 18);
-          g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#9fe0ff'); g.addColorStop(1, 'rgba(60,140,255,0.2)');
-          ctx.fillStyle = g; circle(ctx, x, y, 18);
+          // lanza de cristal de hielo
+          ctx.fillStyle = 'rgba(120,200,255,0.35)';
+          poly(ctx, [x + d * 30, y, x - d * 4, y - 13, x - d * 46, y, x - d * 4, y + 13]);
+          ctx.fillStyle = '#dff6ff';
+          poly(ctx, [x + d * 26, y, x + d * 2, y - 8, x - d * 22, y, x + d * 2, y + 8]);
+          ctx.fillStyle = '#ffffff';
+          poly(ctx, [x + d * 22, y - 1, x + d * 4, y - 4, x - d * 10, y - 1, x + d * 4, y + 1]);
+          ctx.fillStyle = '#9fe0ff';
+          poly(ctx, [x - d * 18, y, x - d * 30, y - 9, x - d * 26, y]);
+          poly(ctx, [x - d * 18, y, x - d * 30, y + 9, x - d * 26, y]);
+          break;
+        }
+        case 'icewall': {
+          // cristales que brotan del suelo
+          const grow = Math.min(1, p.t / 6), fade = Math.min(1, (p.spec.life - p.t) / 10);
+          ctx.globalAlpha = Math.max(0, fade);
+          const shards = [[-30, 0.55], [-18, 0.85], [-6, 1], [6, 0.9], [18, 0.7], [30, 0.5], [-24, 0.35], [24, 0.4]];
+          for (const [ox, hgt] of shards) {
+            const top = GROUND_Y - 190 * hgt * grow, bx = x + ox * d;
+            ctx.fillStyle = 'rgba(150,215,255,0.75)';
+            poly(ctx, [bx - 11, GROUND_Y, bx - 2, top, bx + 11, GROUND_Y]);
+            ctx.fillStyle = 'rgba(240,252,255,0.8)';
+            poly(ctx, [bx - 3, GROUND_Y, bx - 2, top + 8, bx + 3, GROUND_Y]);
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'storm': {
+          // tornado de hielo
+          const fade = Math.min(1, p.t / 6, (p.spec.life - p.t) / 8);
+          ctx.globalAlpha = Math.max(0, fade);
+          ctx.strokeStyle = 'rgba(200,240,255,0.7)';
+          for (let i = 0; i < 6; i++) {
+            const yy = GROUND_Y - 20 - i * 40, r = 30 + i * 12, a0 = p.t * 0.35 + i;
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.ellipse(x, yy, r, r * 0.3, 0, a0, a0 + 4.2); ctx.stroke();
+          }
+          for (let i = 0; i < 10; i++) {
+            const a = p.t * 0.3 + i * 0.63, r = 40 + (i % 3) * 22, yy = GROUND_Y - 30 - (i * 23) % 220;
+            const sx = x + Math.cos(a) * r, ss = 6 + (i % 3) * 3;
+            ctx.fillStyle = i % 2 ? '#ffffff' : '#9fe0ff';
+            poly(ctx, [sx, yy - ss, sx + ss * 0.5, yy, sx, yy + ss, sx - ss * 0.5, yy]);
+          }
+          ctx.globalAlpha = 1;
           break;
         }
         case 'acid':
@@ -912,7 +1000,15 @@ const Game = {
       const x = this.combo.side === 0 ? 60 : W - 60;
       drawText(ctx, `${this.combo.n} GOLPES`, x, 130, 34, fireGradient(ctx, 130, 34), this.combo.side === 0 ? 'left' : 'right');
     }
-    this.f.forEach((f, i) => { if (!this.cpu[i]) this.drawInputTrail(f, i === 0 ? 28 : W - 28, i === 1); });
+    this.f.forEach((f, i) => {
+      if (!this.cpu[i]) this.drawInputTrail(f, i === 0 ? 28 : W - 28, i === 1);
+      if (f.ultraReady && (this.state === 'fight' || this.state === 'intro')) {
+        const pulse = 0.6 + 0.4 * Math.sin(this.t * 0.2);
+        ctx.globalAlpha = pulse;
+        drawText(ctx, 'ULTRA LISTO', i === 0 ? 408 : W - 408, 92, 18, '#bfefff', i === 0 ? 'right' : 'left');
+        ctx.globalAlpha = 1;
+      }
+    });
   },
 
   // Muestra las flechas que el jugador va pulsando (ayuda a aprender los especiales)
@@ -1182,8 +1278,10 @@ const Game = {
     ctx.strokeStyle = '#5a3a1a';
     ctx.strokeRect(W / 2 - bw / 2, by, bw, 146);
     drawText(ctx, `MOVIMIENTOS DE ${ch.name}`, W / 2, by + 16, 18, '#ffd84a', 'center', null);
+    const many = ch.specials.length > 3;
     ch.specials.forEach((s, i) => {
-      drawText(ctx, `${s.name.toUpperCase()}:  ${inputLabel(s)}`, W / 2, by + 42 + i * 22, 16, ch.color === '#eef2f8' ? '#dfe8ff' : ch.color);
+      const col = s.kind === 'ultra' ? '#bfefff' : ch.color === '#eef2f8' ? '#dfe8ff' : ch.color;
+      drawText(ctx, `${s.name.toUpperCase()}:  ${inputLabel(s)}`, W / 2, by + (many ? 38 : 42) + i * (many ? 17 : 22), many ? 14 : 16, col);
     });
     drawText(ctx, `FATALITY (${FATAL_FX[ch.fatal.fx].name}):  ${inputLabel(ch.fatal)}`, W / 2, by + 112, 15, '#ff4a3a');
     const help = Touch.active ? 'GA o START: confirmar · ❚❚: volver'

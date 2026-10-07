@@ -9,8 +9,8 @@ const NINJA = (tail) => ({ head: 'hood', torso: 'vest', arms: 'sleeve', tail: { 
 const CHARACTERS = [
   { id: 'kaizen', name: 'KAIZEN', color: '#b81f18', dark: '#5e0f0b', skin: '#c98a62', eyes: '#ffb030', glow: true,
     look: { head: 'mask', torso: 'warrior', arms: 'warrior', pants: '#1c1a1f', boots: '#2a2326', hair: '#151214',
-      lava: '#ff7a1a', mask: '#2b2629', armor: '#211d22', knee: true, pauldron: true, collar: true, tabard: true,
-      chains: true, embers: true, bulk: 1.04, tail: { color: '#a81c14', len: 7, width: 9, tattered: true } },
+      lava: '#ff7a1a', mask: '#2b2629', armor: '#211d22', knee: true, pauldron: true, collar: true, tabard: 'tattered',
+      chains: true, aura: ['#ff8a1a', '#ffcc40'], bulk: 1.04, tail: { color: '#a81c14', len: 7, width: 9, tattered: true } },
     stance: 'ninja', intro: 'taunt', win: 'winPoint',
     bio: 'Espectro vengativo del inframundo.',
     specials: [
@@ -19,12 +19,18 @@ const CHARACTERS = [
     ],
     fatal: { input: ['D', 'D'], btn: 'hp', fx: 'fire' } },
 
-  { id: 'glaciar', name: 'GLACIAR', color: '#2f86f0', dark: '#163f80', skin: '#d8a27c', eyes: '#101010', glow: false,
-    look: NINJA('#163f80'), stance: 'ninja', intro: 'bow', win: 'winCross',
+  { id: 'glaciar', name: 'GLACIAR', color: '#2f6fd8', dark: '#13305e', skin: '#d9a982', eyes: '#cfe8ff', glow: true,
+    look: { head: 'ponytail', torso: 'gi', arms: 'warrior', pants: '#141418', boots: '#22262e', hair: '#0e0e12',
+      lava: '#9fe0ff', armor: '#18181d', knee: true, crystal: true, tabard: 'clean', collar: false,
+      plate: '#8c97a8', spike: '#c8d2de', bracer: '#7d889a', bracer2: '#5a6474', strap: '#c8ccd4', tattoo: '#13305e',
+      aura: ['#cfefff', '#ffffff'], bulk: 1.03, tail: { color: '#2f6fd8', len: 7, width: 6 } },
+    stance: 'ninja', intro: 'bow', win: 'winCross',
     bio: 'Guerrero del clan del frío.',
     specials: [
-      { name: 'Esfera de Hielo', input: ['D', 'F'], btn: 'lp', kind: 'proj', proj: 'hielo', ai: 'far' },
-      { name: 'Barrida Helada', input: ['B', 'F'], btn: 'lk', kind: 'dash', dash: 'slide', trail: '#9fe0ff', ai: 'mid' },
+      { name: 'Proyectil de Hielo', input: ['D', 'F'], btn: 'lp', kind: 'proj', proj: 'hielo', ai: 'far' },
+      { name: 'Pared de Hielo', input: ['D', 'D'], btn: 'hp', kind: 'proj', proj: 'pared', ai: 'mid' },
+      { name: 'Deslizamiento de Hielo', input: ['B', 'F'], btn: 'lk', kind: 'dash', dash: 'slide', trail: '#9fe0ff', ai: 'mid' },
+      { name: 'Tormenta de Hielo', input: ['D', 'B', 'F'], btn: 'hk', kind: 'ultra', proj: 'tormenta', ai: 'ultra' },
     ],
     fatal: { input: ['F', 'F'], btn: 'lk', fx: 'ice' } },
 
@@ -169,7 +175,13 @@ const DASH = {
 // Proyectiles. y = altura relativa a los pies (por defecto -120). effect: qué le pasa al rival al recibirlo.
 const PROJ = {
   lanza:     { speed: 15, dmg: 5,  w: 34, h: 16, color: '#ff7a1a', range: 560, effect: 'pull', style: 'lanza' },
-  hielo:     { speed: 8,  dmg: 4,  w: 34, h: 34, color: '#9fe0ff', effect: 'freeze', style: 'ice' },
+  hielo:     { speed: 9,  dmg: 4,  w: 44, h: 22, color: '#9fe0ff', effect: 'freeze', style: 'ice', pose: 'cast' },
+  // Pared de hielo: brota frente a GLACIAR, lanza al rival y frena proyectiles enemigos
+  pared:     { speed: 0,  dmg: 9,  w: 62, h: 190, color: '#a8e6ff', effect: 'launch', style: 'icewall', offset: 105,
+               y: -95, life: 50, wall: true, pose: 'quake', wind: 'castUp', startup: 14, recovery: 30 },
+  // ULTRA: tornado de hielo sobre el rival, varios golpes imbloqueables y congelación final
+  tormenta:  { speed: 0,  dmg: 4,  w: 150, h: 260, color: '#bfefff', effect: 'stun', stun: 22, style: 'storm', atTarget: true,
+               y: -130, life: 50, multi: 8, unblockable: true, finalFreeze: true, noClash: true },
   acido:     { speed: 7,  dmg: 12, w: 34, h: 28, color: '#7dff4a', effect: 'stun', stun: 26, style: 'acid' },
   rayo:      { speed: 17, dmg: 9,  w: 60, h: 22, color: '#bff4ff', effect: 'knock', style: 'bolt', pose: 'cast' },
   fuego:     { speed: 10, dmg: 10, w: 42, h: 36, color: '#ff8a1e', effect: 'knock', style: 'fire' },
@@ -272,4 +284,7 @@ const AI_LEVELS = [
 
 const DIR_NAMES = { B: 'ATRÁS', F: 'ADELANTE', D: 'ABAJO' };
 const BTN_NAMES = { hp: 'GA', lp: 'GB', hk: 'PA', lk: 'PB' };
-function inputLabel(m) { return m.input.map(d => DIR_NAMES[d]).join(', ') + ' + ' + BTN_NAMES[m.btn]; }
+const ULTRA_HP = 40; // la ULTRA se habilita con esta vida o menos, una vez por ronda
+function inputLabel(m) {
+  return m.input.map(d => DIR_NAMES[d]).join(', ') + ' + ' + BTN_NAMES[m.btn] + (m.kind === 'ultra' ? `  (ULTRA: vida ${ULTRA_HP}% o menos)` : '');
+}

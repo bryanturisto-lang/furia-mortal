@@ -71,7 +71,7 @@ Las entradas son relativas a hacia dónde miras (ATRÁS / ADELANTE / ABAJO).
 | Guerrero | Especiales | Fatality |
 |----------|-----------|----------|
 | **KAIZEN** (ninja espectro) | Lanza Infernal (Atrás, Adelante + GA) · Teletransporte (Abajo, Atrás + GA) | Aliento Infernal: Abajo, Abajo + GA |
-| **GLACIAR** (ninja de hielo) | Esfera de Hielo (Abajo, Adelante + GB) · Barrida Helada (Atrás, Adelante + PB) | Congelación Total: Adelante, Adelante + PB |
+| **GLACIAR** (guerrero de hielo) | Proyectil de Hielo (Abajo, Adelante + GB) · Pared de Hielo (Abajo, Abajo + GA) · Deslizamiento de Hielo (Atrás, Adelante + PB) · **ULTRA** Tormenta de Hielo (Abajo, Atrás, Adelante + PA) | Congelación Total: Adelante, Adelante + PB |
 | **VENENO** (reptil) | Escupitajo Ácido (Atrás, Adelante + GA) · Deslizamiento (Atrás, Adelante + PB) · Invisibilidad (Abajo, Atrás + PA) | Baño de Ácido: Atrás, Atrás + GB |
 | **HUMO** (ninja de humo) | Nube Tóxica (Atrás, Adelante + GA) · Paso de Humo (Abajo, Atrás + PB) | Asfixia: Abajo, Abajo + PB |
 | **SOMBRA** (asesino del vacío) | Orbe Oscuro (Atrás, Adelante + GA) · Paso Sombrío (Abajo, Atrás + GA) · Patada Sombra (Atrás, Adelante + PB) | Vacío Eterno: Adelante, Adelante + PA |
@@ -84,6 +84,9 @@ Las entradas son relativas a hacia dónde miras (ATRÁS / ADELANTE / ABAJO).
 | **ALMA** (hechicero) | Calaveras de Fuego (Atrás, Adelante + GA) · Robo de Alma (Atrás, Adelante + GB, cerca) · Erupción (Abajo, Atrás + PA) | Robo del Alma: Adelante, Adelante + GB |
 
 La lista de movimientos de cada guerrero también aparece en la pantalla de selección y en la pausa (ESC).
+
+**ULTRA:** algunos guerreros tienen un ataque definitivo que solo se puede usar **una vez por ronda** y
+cuando les queda **40 % de vida o menos**. Cuando está disponible aparece **ULTRA LISTO** bajo tu barra de vida.
 
 ## Modos
 

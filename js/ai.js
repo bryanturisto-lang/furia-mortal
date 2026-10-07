@@ -47,6 +47,7 @@ class AI {
     const list = me.ch.specials.filter(s => kinds.includes(s.ai)
       && !((s.kind === 'proj' || s.kind === 'erupt') && me.projCount > 0)
       && !(s.kind === 'invis' && me.invis > 0)
+      && !(s.kind === 'ultra' && !me.ultraReady)
       && !(s.kind === 'grab' && dist > 95));
     return list.length ? pick(list) : null;
   }
@@ -148,6 +149,7 @@ class AI {
       return;
     }
     if (chance(0.04) && special(['buff'])) return;
+    if (me.ultraReady && chance(0.3) && special(['ultra'])) return;
 
     if (dist > 330) {
       if (r < P.proj && special(['far'])) return;

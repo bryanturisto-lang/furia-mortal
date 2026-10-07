@@ -6,7 +6,7 @@ const LYING = new Set(['down', 'dead', 'launched', 'getup']);
 const NO_HURT = new Set(['down', 'getup', 'dead', 'held', 'intro']);
 const THROWABLE = new Set(['idle', 'walk', 'run', 'crouch', 'block', 'cblock', 'attack', 'recover', 'land', 'prejump', 'dizzy', 'hit']);
 const LIMBS = ['ff', 'bf', 'fh', 'bh'];
-const TAIL_ANCHOR = { hood: [-12, -2], hair: [-12, -6], bun: [-16, -9], long: [-10, -6], mask: [-10, 10] };
+const TAIL_ANCHOR = { hood: [-12, -2], hair: [-12, -6], bun: [-16, -9], long: [-10, -6], mask: [-10, 10], ponytail: [-12, 3] };
 
 function clonePose(p) {
   return { h: p.h, lean: p.lean, rot: p.rot || 0, ff: [...p.ff], bf: [...p.bf], fh: [...p.fh], bh: [...p.bh] };
@@ -59,8 +59,9 @@ function basePalette(ch) {
     eyes: ch.eyes, boots, boots2: shade(boots, 0.6), hair: L.hair || '#141414', band: L.band || ch.color,
     metal: '#aab3be', metal2: '#6c7680', straw: '#d8c890',
     lava: L.lava || ch.color, armor: L.armor || '#211d22', armor2: shade(L.armor || '#211d22', 0.7),
-    mask: L.mask || '#2b2629', plate: '#3c363b', plate2: '#262226', spike: '#9a9498',
-    bracer: '#2a2426', bracer2: '#1c181a', glove: '#181416', tattoo: '#8a1a10', strap: '#5a3a24',
+    mask: L.mask || '#2b2629', plate: L.plate || '#3c363b', plate2: shade(L.plate || '#3c363b', 0.65), spike: L.spike || '#9a9498',
+    bracer: L.bracer || '#2a2426', bracer2: L.bracer2 || '#1c181a', glove: '#181416', tattoo: L.tattoo || '#8a1a10',
+    strap: L.strap || '#5a3a24',
   };
   return ch._pal;
 }
@@ -95,6 +96,17 @@ function spikeOn(ctx, ax, ay, bx, by, t0, t1, len, side, color) {
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
   ctx.fillStyle = color;
   poly(ctx, [x0 + px * 4, y0 + py * 4, mx + px * len + dx / l * 3, my + py * len + dy / l * 3, x1 + px * 4, y1 + py * 4]);
+}
+
+// Cristal de hielo incrustado (rombo brillante)
+function drawGem(ctx, x, y, r, pal) {
+  ctx.save();
+  if (!pal.flat) { ctx.shadowColor = pal.lava; ctx.shadowBlur = 9; }
+  ctx.fillStyle = pal.flat ? pal.lava : '#bfefff';
+  poly(ctx, [x, y - r * 1.4, x + r, y, x, y + r * 1.4, x - r, y]);
+  ctx.fillStyle = pal.flat ? pal.lava : '#ffffff';
+  poly(ctx, [x, y - r * 1.1, x + r * 0.35, y - r * 0.2, x, y + r * 0.3, x - r * 0.3, y - r * 0.2]);
+  ctx.restore();
 }
 
 // Hoz curva (punta de las cadenas de fuego)
@@ -172,19 +184,28 @@ function drawLeg(ctx, rx, ry, k, pal, back, th, look = {}) {
   const dx = ax - kx, dy = ay - ky, l = Math.hypot(dx, dy) || 1;
   seg(ctx, ax, ay, ax + dy / l * 13, ay - dx / l * 13, 9 * th, boot);
   if (look.knee) {
-    // vendas rojas en la bota
+    // vendas en la bota
     seg(ctx, lerp(kx, ax, 0.72), lerp(ky, ay, 0.72), lerp(kx, ax, 0.84), lerp(ky, ay, 0.84), 16 * th, back ? pal.dark : pal.main);
     // grieta de lava en la espinilla
-    if (!back) lavaLine(ctx, pal, [lerp(kx, ax, 0.48) + 3, lerp(ky, ay, 0.48), lerp(kx, ax, 0.6) + 5, lerp(ky, ay, 0.6), lerp(kx, ax, 0.68) + 2, lerp(ky, ay, 0.68)], 1.8);
-    // rodillera con púa hacia adelante
-    ctx.fillStyle = back ? pal.plate2 : pal.plate;
-    circle(ctx, kx, ky, 9 * th);
-    spikeOn(ctx, rx, ry, kx, ky, 0.82, 1, 11, -1, back ? pal.plate : pal.spike);
-    if (!back) lavaLine(ctx, pal, [kx - 4, ky - 3, kx + 1, ky + 1, kx + 4, ky - 2], 1.5);
+    if (!back && !look.crystal) lavaLine(ctx, pal, [lerp(kx, ax, 0.48) + 3, lerp(ky, ay, 0.48), lerp(kx, ax, 0.6) + 5, lerp(ky, ay, 0.6), lerp(kx, ax, 0.68) + 2, lerp(ky, ay, 0.68)], 1.8);
+    if (look.crystal) {
+      // greba plateada sobre la espinilla con un cristal de hielo
+      seg(ctx, kx, ky, lerp(kx, ax, 0.7), lerp(ky, ay, 0.7), 16 * th, back ? pal.plate2 : pal.plate);
+      seg(ctx, lerp(kx, ax, 0.1), lerp(ky, ay, 0.1), lerp(kx, ax, 0.62), lerp(ky, ay, 0.62), 2, back ? pal.plate : pal.spike);
+      ctx.fillStyle = back ? pal.plate2 : pal.plate;
+      circle(ctx, kx, ky, 9 * th);
+      if (!back) drawGem(ctx, lerp(kx, ax, 0.35) + 3, lerp(ky, ay, 0.35), 4.5, pal);
+    } else {
+      // rodillera con púa hacia adelante
+      ctx.fillStyle = back ? pal.plate2 : pal.plate;
+      circle(ctx, kx, ky, 9 * th);
+      spikeOn(ctx, rx, ry, kx, ky, 0.82, 1, 11, -1, back ? pal.plate : pal.spike);
+      if (!back) lavaLine(ctx, pal, [kx - 4, ky - 3, kx + 1, ky + 1, kx + 4, ky - 2], 1.5);
+    }
   }
 }
 
-function drawArm(ctx, rx, ry, a, pal, back, type, th) {
+function drawArm(ctx, rx, ry, a, pal, back, type, th, look = {}) {
   const [ex, ey, hx, hy] = a;
   let up, fore, cuff, fist, uw = 13, fw = 11;
   switch (type) {
@@ -205,11 +226,18 @@ function drawArm(ctx, rx, ry, a, pal, back, type, th) {
   if (type === 'robe') seg(ctx, ex, ey, lerp(ex, hx, 0.4), lerp(ey, hy, 0.4), 18 * th, up);
   else if (type === 'warrior') {
     // tatuaje en el brazo, vendas rojas y púas en el brazalete
-    if (!back) lavaLine(ctx, { lava: pal.tattoo, flat: true }, [lerp(rx, ex, 0.25) + 2, lerp(ry, ey, 0.25), lerp(rx, ex, 0.5) - 3, lerp(ry, ey, 0.5), lerp(rx, ex, 0.75) + 2, lerp(ry, ey, 0.75)], 2.2);
+    if (!back && !look.crystal) lavaLine(ctx, { lava: pal.tattoo, flat: true }, [lerp(rx, ex, 0.25) + 2, lerp(ry, ey, 0.25), lerp(rx, ex, 0.5) - 3, lerp(ry, ey, 0.5), lerp(rx, ex, 0.75) + 2, lerp(ry, ey, 0.75)], 2.2);
     seg(ctx, ex, ey, lerp(ex, hx, 0.18), lerp(ey, hy, 0.18), (fw + 2) * th, cuff);
     seg(ctx, lerp(ex, hx, 0.78), lerp(ey, hy, 0.78), lerp(ex, hx, 0.9), lerp(ey, hy, 0.9), (fw + 2) * th, cuff);
-    spikeOn(ctx, ex, ey, hx, hy, 0.3, 0.48, 9, -1, back ? pal.plate : pal.spike);
-    spikeOn(ctx, ex, ey, hx, hy, 0.5, 0.68, 8, -1, back ? pal.plate : pal.spike);
+    if (look.crystal) {
+      // brazalete plateado con cristal de hielo y brazalete negro en el bíceps
+      seg(ctx, lerp(rx, ex, 0.55), lerp(ry, ey, 0.55), lerp(rx, ex, 0.68), lerp(ry, ey, 0.68), (uw + 2) * th, pal.pants);
+      seg(ctx, lerp(ex, hx, 0.3), lerp(ey, hy, 0.3), lerp(ex, hx, 0.66), lerp(ey, hy, 0.66), 2, back ? pal.plate : pal.spike);
+      if (!back) drawGem(ctx, lerp(ex, hx, 0.48), lerp(ey, hy, 0.48), 3.8, pal);
+    } else {
+      spikeOn(ctx, ex, ey, hx, hy, 0.3, 0.48, 9, -1, back ? pal.plate : pal.spike);
+      spikeOn(ctx, ex, ey, hx, hy, 0.5, 0.68, 8, -1, back ? pal.plate : pal.spike);
+    }
   } else seg(ctx, lerp(ex, hx, 0.55), lerp(ey, hy, 0.55), hx, hy, (fw + 1) * th, cuff);
   ctx.fillStyle = fist;
   circle(ctx, hx, hy, 7.5 * th);
@@ -286,6 +314,26 @@ function drawHead(ctx, ch, pal, o) {
       eyes(7, 12, -4, 1.8);
       seg(ctx, 3, -7.5, 13.5, -5.5, 2, pal.hair);
       break;
+    case 'ponytail':
+      // cola de caballo alta, mechones y máscara de tela
+      ctx.fillStyle = pal.hair;
+      poly(ctx, [-4, -11, -12, -27, -4, -22, -7, -33, 2, -21, 5, -12]);
+      circle(ctx, -2, -2, 13.5);
+      poly(ctx, [-14, -2, -19, 8, -12, 4, -13, 12, -7, 6]);
+      ctx.fillStyle = pal.main;
+      ctx.fillRect(-7, -16, 9, 4);
+      ctx.fillStyle = pal.skin;
+      ctx.beginPath(); ctx.arc(1, 1, 12, -Math.PI * 0.4, Math.PI * 0.6); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = pal.hair;
+      poly(ctx, [-3, -12, 9, -13, 14, -5, 8, -8, 4, -4, 1, -9]);
+      // máscara azul con costura y símbolo de hielo
+      ctx.fillStyle = pal.main;
+      poly(ctx, [-4, -1, 14, -1.5, 13.5, 7, 6, 12.5, -5, 10]);
+      seg(ctx, 6, -1, 6, 12, 1.2, pal.dark);
+      lavaLine(ctx, pal, [9, 2, 11, 5, 9, 8], 1.2);
+      eyes(7, 12, -4.5, 1.7);
+      seg(ctx, 3, -8, 13.5, -6, 2, pal.hair);
+      break;
     default: // capucha ninja
       ctx.fillStyle = pal.main; circle(ctx, 0, 0, 13.5);
       ctx.fillStyle = pal.skin; ctx.fillRect(1, -6, 12, 7);
@@ -314,11 +362,12 @@ function drawFigure(ctx, ch, p, o = {}) {
   if (look.tabard) {
     const bx0 = ux * 8, by0 = uy * 8, sw = clamp(p.bf[0] * 0.3, -24, 6);
     ctx.fillStyle = pal.dark;
-    poly(ctx, [bx0 - 15 * nx, by0 - 15 * ny, bx0 - 2 * nx, by0 - 2 * ny, -4 + sw, 64, -9 + sw, 76, -14 + sw, 66, -20 + sw, 80, -24 + sw, 62]);
+    if (look.tabard === 'clean') poly(ctx, [bx0 - 15 * nx, by0 - 15 * ny, bx0 - 2 * nx, by0 - 2 * ny, -5 + sw, 56, -14 + sw, 62, -22 + sw, 54]);
+    else poly(ctx, [bx0 - 15 * nx, by0 - 15 * ny, bx0 - 2 * nx, by0 - 2 * ny, -4 + sw, 64, -9 + sw, 76, -14 + sw, 66, -20 + sw, 80, -24 + sw, 62]);
   }
 
   drawLeg(ctx, -5, 0, bl, pal, true, th, look);
-  drawArm(ctx, sx - 6, sy + 3, ba, pal, true, look.arms, th);
+  drawArm(ctx, sx - 6, sy + 3, ba, pal, true, look.arms, th, look);
 
   // torso
   const w0 = 15 * th, w1 = 20 * th;
@@ -349,6 +398,25 @@ function drawFigure(ctx, ch, p, o = {}) {
       ctx.fillStyle = pal.spike;
       circle(ctx, bx + 6 * nx, by + 6 * ny, 4);
       break;
+    case 'gi': {
+      // chaleco negro tipo kimono con solapas azules cruzadas, faja azul y nudo de cuerda con borla
+      ctx.fillStyle = pal.armor; poly(ctx, T);
+      // solapas en V: de cada hombro hacia el centro de la faja
+      const lap = (x0, y0, x1, y1, edge) => {
+        seg(ctx, x0, y0, x1, y1, 6, pal.main);
+        seg(ctx, x0 + nx * edge, y0 + ny * edge, x1 + nx * edge, y1 + ny * edge, 1.2, pal.spike);
+      };
+      lap(sx - 13 * nx, sy - 13 * ny, bx + 4 * nx + ux * 8, by + 4 * ny + uy * 8, 3);
+      lap(sx + 15 * nx, sy + 15 * ny, bx + 6 * nx + ux * 8, by + 6 * ny + uy * 8, -3);
+      seg(ctx, bx - w0 * nx, by - w0 * ny, bx + w0 * nx, by + w0 * ny, 12, pal.main);
+      seg(ctx, bx - w0 * nx + ux * 5, by - w0 * ny + uy * 5, bx + w0 * nx + ux * 5, by + w0 * ny + uy * 5, 2.5, pal.pants);
+      ctx.fillStyle = pal.strap;
+      circle(ctx, bx + 8 * nx, by + 8 * ny, 4);
+      seg(ctx, bx + 8 * nx, by + 8 * ny, bx + 9 * nx, by + 8 * ny + 16, 2.5, pal.strap);
+      ctx.fillStyle = pal.main;
+      poly(ctx, [bx + 7 * nx - 2, by + 8 * ny + 14, bx + 7 * nx + 4, by + 8 * ny + 14, bx + 7 * nx + 3, by + 8 * ny + 24, bx + 7 * nx - 1, by + 8 * ny + 24]);
+      break;
+    }
     case 'armor':
       ctx.fillStyle = pal.metal; poly(ctx, T);
       seg(ctx, ux * 12, uy * 12, sx - ux * 6, sy - uy * 6, 6, pal.main);
@@ -383,7 +451,19 @@ function drawFigure(ctx, ch, p, o = {}) {
   drawLeg(ctx, 6, 0, fl, pal, false, th, look);
 
   // faldón / túnica
-  if (look.tabard) {
+  if (look.tabard === 'clean') {
+    // faldón azul con borde plateado y diseño de hielo
+    const sw = clamp(p.ff[0] * 0.3, -6, 26);
+    ctx.fillStyle = pal.main;
+    poly(ctx, [bx, by, bx + 15 * nx, by + 15 * ny, 15 + sw, 56, 7 + sw, 63, -1 + sw, 56]);
+    ctx.strokeStyle = pal.spike;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bx + 2 * nx, by + 2 * ny + 6); ctx.lineTo(1 + sw, 54); ctx.lineTo(7 + sw, 60); ctx.lineTo(13 + sw, 54);
+    ctx.lineTo(bx + 13 * nx, by + 13 * ny + 6);
+    ctx.stroke();
+    lavaLine(ctx, pal, [7 + sw * 0.6, 30, 4 + sw * 0.65, 39, 9 + sw * 0.7, 45, 7 + sw * 0.72, 52], 1.5);
+  } else if (look.tabard) {
     // faldón rojo desgarrado con el emblema en naranja
     const sw = clamp(p.ff[0] * 0.3, -6, 26);
     ctx.fillStyle = pal.main;
@@ -402,7 +482,7 @@ function drawFigure(ctx, ch, p, o = {}) {
     poly(ctx, [bx, by, bx + fw * nx, by + fw * ny, fw + sw, 36, 2 + sw, 38]);
   }
 
-  drawArm(ctx, sx + 4, sy, fa, pal, false, look.arms, th);
+  drawArm(ctx, sx + 4, sy, fa, pal, false, look.arms, th, look);
 
   // hombrera con púas sobre el hombro delantero
   if (look.pauldron) {
@@ -476,7 +556,7 @@ class Fighter {
       tint: null, pulled: 0, netted: 0, dizzyOnLand: false, running: false, chain: 0,
       floating: false, invis: 0, grab: null, heldMode: null, heldT: 0, bounced: false, hitLow: false, jumpDir: 0,
       trailOn: false, trailColor: null, trail: [], scarf: null, headless: false, melt: 0, fxScale: 1, spinT: 0,
-      headPos: [x, GROUND_Y - 170], eruptX: 0, spName: '', spNameT: 0, lastBtn: null, seqShown: [], seqShownT: -999, chains: null,
+      headPos: [x, GROUND_Y - 170], eruptX: 0, spName: '', spNameT: 0, lastBtn: null, seqShown: [], seqShownT: -999, chains: null, ultraUsed: false,
     });
     this.pose = clonePose(this.stance.idle);
   }
@@ -582,10 +662,11 @@ class Fighter {
     if (this.state !== 'attack') this.chain = 0;
     if (CONTROL_STATES.has(this.state) || this.state === 'down') this.comboCount = 0;
 
-    // brasas que se desprenden del cuerpo
-    if (this.ch.look.embers && this.t % 5 === 0 && !this.hidden && !this.gone && this.invis <= 0) {
+    // aura: brasas (KAIZEN) o escarcha (GLACIAR) que se desprenden del cuerpo
+    const aura = this.ch.look.aura;
+    if (aura && this.t % 5 === 0 && !this.hidden && !this.gone && this.invis <= 0) {
       game.fx.add({ x: this.x + rand(-22, 22), y: this.y - rand(30, 170) * this.bulk, vx: rand(-0.4, 0.4), vy: rand(-1.6, -0.6),
-        g: -0.01, life: rand(20, 40), size: rand(1.2, 2.6), color: chance(0.5) ? '#ff8a1a' : '#ffcc40', kind: 'glow' });
+        g: -0.01, life: rand(20, 40), size: rand(1.2, 2.6), color: pick(aura), kind: 'glow' });
     }
 
     this.physics(game);
@@ -643,6 +724,7 @@ class Fighter {
       if (sp.btn !== atk || !this.seq(sp.input, gap)) continue;
       if ((sp.kind === 'proj' || sp.kind === 'erupt') && this.projCount > 0) continue;
       if (sp.kind === 'invis' && this.invis > 0) continue;
+      if (sp.kind === 'ultra' && !this.ultraReady) continue;
       this.seqShown = this.buf.slice(-sp.input.length);
       this.seqShownT = this.t;
       this.buf.length = 0;
@@ -663,6 +745,9 @@ class Fighter {
     else this.startMove(atk);
     return true;
   }
+
+  get hasUltra() { return this.ch.specials.some(s => s.kind === 'ultra'); }
+  get ultraReady() { return this.hasUltra && !this.ultraUsed && this.hp > 0 && this.hp <= ULTRA_HP; }
 
   canCancel() {
     const m = this.move;
@@ -714,6 +799,7 @@ class Fighter {
       case 'grab': return { sp, kind: 'grab', mode: sp.mode, range: 105, startup: 6, active: 1, recovery: 22, pose: 'throw', hold: 4 };
       case 'erupt': return { sp, kind: 'erupt', startup: 14, active: 0, recovery: 24, pose: 'castUp', hold: 12 };
       case 'invis': return { sp, kind: 'invis', startup: 10, active: 0, recovery: 12, pose: 'castUp', hold: 6 };
+      case 'ultra': return { sp, kind: 'ultra', startup: 26, active: 0, recovery: 36, pose: 'castUp', wind: 'quake', hold: 30 };
     }
     return MOVES.hp;
   }
@@ -730,6 +816,10 @@ class Fighter {
         break;
       case 'invis':
         if (t === m.startup) { this.invis = 420; game.fx.smoke(this.x, this.y - 90, this.ch.color); Sound.special('sombra'); }
+        break;
+      case 'ultra':
+        if (t === 1) { this.ultraUsed = true; game.ultraStart(this); }
+        if (t === m.startup) game.spawnProjectile(this, m.sp.proj);
         break;
       case 'tele': this.updateTele(opp, game, t); break;
       case 'grab': case 'throw':
