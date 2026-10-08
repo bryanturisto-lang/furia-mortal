@@ -24,8 +24,8 @@ const CHARACTERS = [
     fatal: { input: ['D', 'D'], btn: 'hp', fx: 'cadenas' } },
 
   { id: 'glaciar', name: 'GLACIAR', color: '#2f6fd8', dark: '#13305e', skin: '#d9a982', eyes: '#cfe8ff', glow: true,
-    look: { head: 'ponytail', torso: 'gi', arms: 'warrior', pants: '#141418', boots: '#22262e', hair: '#0e0e12',
-      lava: '#9fe0ff', armor: '#18181d', knee: true, crystal: true, tabard: 'clean', collar: false,
+    look: { head: 'ponytail', torso: 'gi', arms: 'warrior', pants: '#141418', boots: '#22262e', hair: '#b4bac6',
+      lava: '#9fe0ff', armor: '#18181d', knee: true, crystal: true, tabard: 'tattered', collar: false,
       plate: '#8c97a8', spike: '#c8d2de', bracer: '#7d889a', bracer2: '#5a6474', strap: '#c8ccd4', tattoo: '#13305e',
       aura: ['#cfefff', '#ffffff'], bulk: 1.03, tail: { color: '#2f6fd8', len: 7, width: 6 } },
     stance: 'ninja', intro: 'bow', win: 'winCross',
