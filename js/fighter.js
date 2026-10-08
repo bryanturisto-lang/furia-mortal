@@ -586,6 +586,7 @@ function drawFigure(ctx, ch, p, o = {}) {
 function drawCharAt(ctx, ch, pose, x, y, facing = 1, scale = 1, o = {}) {
   if (window.R3D && o.anim3d) R3D.pedir(ch);   // vista grande: cargar su modelo 3D si aún no está
   if (window.R3D && R3D.has(ch)) { R3D.drawAt(ctx, ch, x, y, facing, scale, o); return; }
+  if (window.R3D && R3D.existe(ch)) return;    // su modelo 3D está cargando: no mostrar el dibujo 2D
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(facing * scale * (ch.look.bulk || 1), scale * (ch.look.bulk || 1));
@@ -1390,6 +1391,7 @@ class Fighter {
     let alpha = 1;
     if (this.invis > 0) alpha = this.flash > 0 ? 0.6 : 0.1 + 0.05 * Math.sin(this.t * 0.3);
     const en3d = window.R3D && R3D.has(this.ch);
+    if (!en3d && window.R3D && R3D.existe(this.ch)) return;   // modelo 3D cargando: no mezclar con el 2D
 
     // estela de velocidad
     if (alpha === 1 && !en3d) {

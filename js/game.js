@@ -27,6 +27,13 @@ const ERUPTS = {
 };
 const LADDER_SIZE = 7;
 const GRID_COLS = 4;
+// Retratos de la pantalla de selección: imágenes de los modelos 3D (se cargan una vez)
+const RETRATOS = {};
+function retrato(ch) {
+  let im = RETRATOS[ch.id];
+  if (!im) { im = RETRATOS[ch.id] = new Image(); im.src = `modelos/retratos/${ch.id}.png`; }
+  return im.complete && im.naturalWidth ? im : null;
+}
 const HOOK_PULL = 16;     // frames que tarda la cadena de la Lanza Infernal en arrastrar al rival
 const PROJ_SFX = { dragon: 'fuego', fuegoBajo: 'fuego', nube: 'acido', orbe: 'sombra', calavera: 'fuego' };
 
@@ -1519,7 +1526,10 @@ const Game = {
       rg.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = rg;
       ctx.fillRect(cx, cy, cw, chh);
-      drawCharAt(ctx, ch, STANCES[ch.stance].idle, cx + cw / 2 - 6, cy + 172 - ((ch.look.bulk || 1) - 1) * 170, 1, 0.92);
+      // retrato 3D ya renderizado (modelos/retratos); si no carga, el dibujo 2D de siempre
+      const foto = retrato(ch);
+      if (foto) ctx.drawImage(foto, cx, cy, cw, chh);
+      else drawCharAt(ctx, ch, STANCES[ch.stance].idle, cx + cw / 2 - 6, cy + 172 - ((ch.look.bulk || 1) - 1) * 170, 1, 0.92);
       ctx.restore();
       ctx.fillStyle = 'rgba(0,0,0,0.65)';
       ctx.fillRect(cx, cy + chh - 20, cw, 20);

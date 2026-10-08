@@ -94,7 +94,7 @@ function iniciarRender() {
 
 // Momento de impacto de cada animación: cuando una mano o un pie llega más lejos hacia delante.
 function analizar(base) {
-  const root = base.scene, mixer = new THREE.AnimationMixer(root);
+  const root = base.scene, mixer = new THREE.AnimationMixer(root), restaurar = guardarReposo(root);
   const huesos = {};
   root.traverse(o => { if (o.isBone) huesos[o.name] = o; });
   const ext = ['LeftHand', 'RightHand', 'LeftFoot', 'RightFoot'].map(n => huesos[n]).filter(Boolean);
@@ -156,23 +156,90 @@ function analizar(base) {
     base.info[nombre] = { dur: clip.duration, impacto, paso };
   }
   mixer.stopAllAction();
-  root.traverse(o => { if (o.isSkinnedMesh) o.skeleton.pose(); });
+  restaurar();
 }
 
-// Adapta un clip de otro personaje: las rotaciones sirven tal cual (mismo esqueleto) y el movimiento
-// de la cadera se escala según la altura de cadera de cada uno
-function adaptarClip(clip, hipsDonante, hipsDestino) {
-  const c = clip.clone(), k = hipsDestino.y / hipsDonante.y;
-  for (const t of c.tracks) {
-    if (t.name !== 'Hips.position') continue;
-    const v = t.values;
+// ---------- Animaciones prestadas (retargeting) ----------
+// Cada esqueleto de Meshy tiene los mismos huesos, pero con otras medidas y los ejes de cada hueso algo
+// girados. Copiar las rotaciones tal cual deforma el cuerpo (cabeza caída, hombros torcidos) y copiar las
+// posiciones estira los huesos. Por eso se transfiere el GIRO RESPECTO A LA POSE DE REPOSO, en el espacio
+// del modelo: Wdestino = Wdonante · (reposo donante)⁻¹ · (reposo destino). Cada uno conserva sus medidas.
+const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _s = new THREE.Vector3();
+function rotDe(m) { const q = new THREE.Quaternion(); m.decompose(_p, q, _s); return q; }
+
+// Guarda y restaura la pose de reposo de todos los huesos. (skeleton.pose() de three.js no sirve aquí:
+// con el esqueleto de Meshy, que cuelga de un nodo con escala 0,01, aplica esa escala dos veces.)
+function guardarReposo(root) {
+  const r = [];
+  root.traverse(o => { if (o.isBone) r.push([o, o.position.clone(), o.quaternion.clone(), o.scale.clone()]); });
+  return () => { for (const [b, p, q, s] of r) { b.position.copy(p); b.quaternion.copy(q); b.scale.copy(s); } };
+}
+
+function esqueletoDe(root) {
+  let mesh = null;
+  root.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+  root.updateMatrixWorld(true);
+  const sk = mesh.skeleton, reposo = {}, porNombre = {};
+  sk.bones.forEach((b, i) => {
+    reposo[b.name] = rotDe(_m.copy(sk.boneInverses[i]).invert());   // giro del hueso en reposo (espacio del modelo)
+    porNombre[b.name] = b;
+  });
+  // huesos ordenados de padres a hijos
+  const orden = [];
+  const visitar = b => { orden.push(b); b.children.forEach(c => c.isBone && visitar(c)); };
+  sk.bones.filter(b => !b.parent || !b.parent.isBone).forEach(visitar);
+  return { root, mesh, sk, reposo, porNombre, orden, restaurar: guardarReposo(root) };
+}
+
+function retargetClip(clip, D, T, hipsDonante, hipsDestino) {
+  const mixer = new THREE.AnimationMixer(D.root);
+  const act = mixer.clipAction(clip);
+  act.play();
+  const ref = clip.tracks.find(t => t.name === 'Hips.quaternion') || clip.tracks[0];
+  const times = ref.times, n = times.length;
+  const invMeshT = _m.clone().copy(T.mesh.matrixWorld).invert();
+  // giro fijo (en espacio del modelo) del padre de los huesos raíz del destino
+  const padreFijo = {};
+  for (const b of T.orden) if (!b.parent.isBone) padreFijo[b.name] = rotDe(invMeshT.clone().multiply(b.parent.matrixWorld));
+  const salida = {};
+  for (const b of T.orden) salida[b.name] = new Float32Array(n * 4);
+  const W = {}, invD = new THREE.Matrix4(), q = new THREE.Quaternion(), inv = new THREE.Quaternion();
+  for (let i = 0; i < n; i++) {
+    act.time = times[i];
+    mixer.update(0);
+    D.root.updateMatrixWorld(true);
+    invD.copy(D.mesh.matrixWorld).invert();
+    for (const b of T.orden) {
+      const padre = b.parent.isBone ? W[b.parent.name] : padreFijo[b.name];
+      const bd = D.porNombre[b.name];
+      let w;
+      if (bd && D.reposo[b.name] && T.reposo[b.name]) {
+        w = rotDe(_m.copy(invD).multiply(bd.matrixWorld));                   // giro del donante ahora
+        w.multiply(inv.copy(D.reposo[b.name]).invert()).multiply(T.reposo[b.name]);
+      } else {
+        w = padre.clone().multiply(b.quaternion);                            // hueso sin equivalente: queda en reposo
+      }
+      W[b.name] = w;
+      q.copy(padre).invert().multiply(w);                                    // a giro local respecto al padre
+      salida[b.name].set([q.x, q.y, q.z, q.w], i * 4);
+    }
+  }
+  act.stop();
+  mixer.uncacheClip(clip);
+  D.restaurar();
+  const tracks = T.orden.map(b => new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, salida[b.name]));
+  // la cadera sí se desplaza (saltos, caídas), escalada a la altura de cadera del destino
+  const pos = clip.tracks.find(t => t.name === 'Hips.position');
+  if (pos) {
+    const v = pos.values.slice(), k = hipsDestino.y / hipsDonante.y;
     for (let i = 0; i < v.length; i += 3) {
       v[i] = hipsDestino.x + (v[i] - hipsDonante.x) * k;
       v[i + 1] *= k;
       v[i + 2] = hipsDestino.z + (v[i + 2] - hipsDonante.z) * k;
     }
+    tracks.push(new THREE.VectorKeyframeTrack('Hips.position', pos.times, v));
   }
-  return c;
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
 }
 
 const cargas = {};
@@ -183,7 +250,8 @@ async function cargar(id, { url, contraluz, anims }) {
   let animaciones = g.animations;
   if (anims) {
     const donante = await cargas[anims];
-    animaciones = donante.originales.map(c => adaptarClip(c, donante.hipsRest, hipsRest));
+    const D = donante.esqueleto, T = esqueletoDe(g.scene);
+    animaciones = donante.originales.map(c => retargetClip(c, D, T, donante.hipsRest, hipsRest));
   }
   const clips = {};
   for (const c of animaciones) {
@@ -212,6 +280,7 @@ async function cargar(id, { url, contraluz, anims }) {
   const base = { scene: g.scene, clips, info: {}, caderaY: 1, contraluz: new THREE.Color(contraluz || '#ff9a50'),
     originales: animaciones, hipsRest };
   analizar(base);
+  base.esqueleto = esqueletoDe(base.scene);   // por si presta sus animaciones a otros
   bases[id] = base;
   return base;
 }
@@ -642,7 +711,22 @@ function pedir(id) {
   if (!cfg || cargas[id]) return;
   if (cfg.anims) pedir(cfg.anims);
   cargas[id] = cargar(id, cfg);
-  cargas[id].catch(e => console.warn('Modelo 3D no disponible (' + id + '); se usa el dibujo 2D.', e));
+  cargas[id].catch(e => { fallidos.add(id); console.warn('Modelo 3D no disponible (' + id + '); se usa el dibujo 2D.', e); });
 }
+const fallidos = new Set();
 R3D.pedir = ch => ch && pedir(ch.id);
+// ¿tiene modelo 3D (aunque aún no haya cargado)? Mientras carga no se dibuja en 2D, para no mezclar estilos
+R3D.existe = ch => !!(ch && MODELOS[ch.id] && !fallidos.has(ch.id));
+R3D.bases = bases;   // para revisar desde la consola
+// Para herramientas de revisión: dibuja a un personaje en una animación e instante concretos
+R3D.pose = async (ctx, id, anim, frac, x, y, escala = 1) => {
+  pedir(id);
+  await cargas[id];
+  const it = instancia('pose:' + id + ':' + escala, id);
+  it.root.scale.setScalar((CHARACTERS.find(c => c.id === id).look.bulk || 1) * it.base.escala);
+  it.root.rotation.set(0, GIRO, 0);
+  it.dtf = 99; it.mezcla = 1; it.previa = null; it.clave = '';
+  aplicar(it, [[anim, frac * (it.base.info[anim].dur - 0.001)]], 1, anim !== 'caer');
+  return dibujar(ctx, it, x, y, escala, 0)('Head');   // devuelve dónde quedó la cabeza (para encuadrar)
+};
 pedir('kaizen');   // es el primero de la lista y el que presta sus animaciones

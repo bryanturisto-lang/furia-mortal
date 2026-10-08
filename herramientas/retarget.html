@@ -81,6 +81,47 @@
       if (guardar) await fetch('http://127.0.0.1:8099/' + guardar, { method: 'POST', body: out.toDataURL('image/jpeg', 0.85) });
       return fila;
     };
+    // Diagnóstico de un personaje con animaciones prestadas: diferencia (grados) entre la pose de reposo
+    // de cada hueso suyo y la del donante, y hoja con varias animaciones clave.
+    window.diagnosticar = async ({ ids, donante = 'kaizen', clips, guardar }) => {
+      const loader = new GLTFLoader();
+      const don = await loader.loadAsync('../modelos/' + donante + '.glb');
+      const restos = s => { const r = {}; s.traverse(o => { if (o.isBone) r[o.name] = o.quaternion.clone(); }); return r; };
+      const rd = restos(don.scene);
+      const hips = s => { let h = null; s.traverse(o => { if (o.isBone && o.name === 'Hips') h = h || o; }); return h; };
+      const cols = clips.length + 1;
+      const out = document.createElement('canvas');
+      out.width = CW * cols; out.height = CH * ids.length;
+      const ctx = out.getContext('2d');
+      ctx.font = '12px sans-serif';
+      const informe = {};
+      for (const [fila, id] of ids.entries()) {
+        const g = await loader.loadAsync('../modelos/' + id + '.glb');
+        const rt = restos(g.scene), dif = {};
+        for (const n in rt) if (rd[n]) { const a = THREE.MathUtils.radToDeg(rt[n].angleTo(rd[n])); if (a > 8) dif[n] = Math.round(a); }
+        informe[id] = dif;
+        const m = g.scene;
+        scene.add(m);
+        const mixer = new THREE.AnimationMixer(m);
+        renderer.render(scene, cam);
+        ctx.drawImage(renderer.domElement, 0, fila * CH);
+        clips.forEach(([nombre, frac], c) => {
+          const clip = adaptar(don.animations.find(x => x.name === nombre), hips(don.scene), hips(m));
+          mixer.stopAllAction();
+          const act = mixer.clipAction(clip); act.play();
+          act.time = clip.duration * frac; mixer.update(0);
+          renderer.render(scene, cam);
+          ctx.drawImage(renderer.domElement, (c + 1) * CW, fila * CH);
+          mixer.uncacheClip(clip);
+        });
+        ctx.fillStyle = '#ffd060';
+        ctx.fillText(id, 4, fila * CH + 14);
+        scene.remove(m);
+      }
+      document.body.appendChild(out);
+      if (guardar) await fetch('http://127.0.0.1:8099/' + guardar, { method: 'POST', body: out.toDataURL('image/jpeg', 0.85) });
+      return informe;
+    };
     window.listo = true;
   </script>
 </body>
