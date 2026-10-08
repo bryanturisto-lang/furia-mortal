@@ -584,6 +584,7 @@ function drawFigure(ctx, ch, p, o = {}) {
 }
 
 function drawCharAt(ctx, ch, pose, x, y, facing = 1, scale = 1, o = {}) {
+  if (window.R3D && o.anim3d) R3D.pedir(ch);   // vista grande: cargar su modelo 3D si aún no está
   if (window.R3D && R3D.has(ch)) { R3D.drawAt(ctx, ch, x, y, facing, scale, o); return; }
   ctx.save();
   ctx.translate(x, y);
@@ -613,6 +614,7 @@ class Fighter {
     this.stance = STANCES[ch.stance] || STANCES.ninja;
     this.bulk = ch.look.bulk || 1;
     this.specials = ch.specials.slice().sort((a, b) => b.input.length - a.input.length);
+    if (window.R3D) R3D.pedir(ch);   // su modelo 3D (si tiene) empieza a cargar al crear la pelea
     this._tmp = clonePose(POSES.idle);
     this.reset(STAGE_W / 2, 1);
   }

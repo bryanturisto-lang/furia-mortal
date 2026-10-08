@@ -1,6 +1,7 @@
-﻿// Service worker: permite instalar el juego y jugarlo sin internet.
-// Estrategia: primero la red (para recibir actualizaciones) y, si no hay conexiÃ³n, la copia guardada.
-const CACHE = 'furia-mortal-v5';
+// Service worker: permite instalar el juego y jugarlo sin internet.
+// Estrategia: primero la red (para recibir actualizaciones) y, si no hay conexión, la copia guardada.
+// Los modelos 3D no se descargan todos al instalar (pesan mucho): se guardan a medida que se usan.
+const CACHE = 'furia-mortal-v6';
 const FILES = [
   './', 'index.html', 'style.css', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
@@ -9,7 +10,7 @@ const FILES = [
   'js/vendor/three/three.module.min.js', 'js/vendor/three/addons/loaders/GLTFLoader.js',
   'js/vendor/three/addons/utils/BufferGeometryUtils.js', 'js/vendor/three/addons/utils/SkeletonUtils.js',
   'js/vendor/three/addons/environments/RoomEnvironment.js',
-  'modelos/kaizen.glb', 'modelos/glaciar.glb', 'modelos/veneno.glb', 'modelos/fondo.jpg', 'modelos/suelo.jpg',
+  'modelos/kaizen.glb', 'modelos/fondo.jpg', 'modelos/suelo.jpg',
 ];
 
 self.addEventListener('install', e => {

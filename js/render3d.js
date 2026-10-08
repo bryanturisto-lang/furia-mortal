@@ -13,11 +13,22 @@ const MODELOS = {
   glaciar: { url: 'modelos/glaciar.glb', contraluz: '#8cc8ff' },
   // anims: usa las animaciones de otro personaje (mismo esqueleto de Meshy); el archivo solo trae el modelo
   veneno: { url: 'modelos/veneno.glb', contraluz: '#a8ff60', anims: 'kaizen' },
+  humo: { url: 'modelos/humo.glb', contraluz: '#d0d8e0', anims: 'kaizen' },
+  sombra: { url: 'modelos/sombra.glb', contraluz: '#c060ff', anims: 'kaizen' },
+  carmesi: { url: 'modelos/carmesi.glb', contraluz: '#ff6a3a', anims: 'kaizen' },
+  dragon: { url: 'modelos/dragon.glb', contraluz: '#ff8a40', anims: 'kaizen' },
+  titan: { url: 'modelos/titan.glb', contraluz: '#ffd8a0', anims: 'kaizen' },
+  trueno: { url: 'modelos/trueno.glb', contraluz: '#9ff0ff', anims: 'kaizen' },
+  ciborg: { url: 'modelos/ciborg.glb', contraluz: '#ff3a2a', anims: 'kaizen' },
+  abanico: { url: 'modelos/abanico.glb', contraluz: '#ff7ab8', anims: 'kaizen' },
+  alma: { url: 'modelos/alma.glb', contraluz: '#7dff6a', anims: 'kaizen' },
 };
 
 const PPM = 104;                               // píxeles del juego por metro (1,8 m ≈ 187 px, como el dibujo 2D)
 const BOX_W = 400, BOX_H = 350, FOOT = 40;     // recuadro de cada luchador (px del juego) y margen bajo los pies
 const MAX_ESCALA = 1.6, MAX_RES = 2;
+// los personajes se dibujan a más resolución que la pantalla y luego se reducen (bordes y detalles más nítidos)
+const SUPERMUESTREO = 1.5, MAX_RES_PJ = 3;
 const GIRO = 62 * Math.PI / 180;               // de perfil (90°), girado un poco hacia la cámara
 const CABEZA_Y = 1.58;                         // altura de la cabeza en guardia (m): iguala la estatura de todos
 // frames de transición entre animaciones: rápida al recibir un golpe, más lenta al volver a la guardia
@@ -60,13 +71,17 @@ let renderer = null, camera = null, scene = null, rim = null;
 function iniciarRender() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true });
   renderer.setPixelRatio(1);
-  renderer.setSize(Math.ceil(BOX_W * MAX_ESCALA * MAX_RES), Math.ceil(BOX_H * MAX_ESCALA * MAX_RES), false);
+  renderer.setSize(Math.ceil(BOX_W * MAX_ESCALA * MAX_RES_PJ), Math.ceil(BOX_H * MAX_ESCALA * MAX_RES_PJ), false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;   // luces y sombras más naturales
+  renderer.toneMappingExposure = 1.05;
   renderer.setClearColor(0x000000, 0);
   renderer.setScissorTest(true);
   scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight('#fff4ea', '#3a2a30', 2.1));
-  const key = new THREE.DirectionalLight('#ffffff', 2.3);
+  // reflejos suaves del entorno sobre la ropa, la piel y el metal
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.add(new THREE.HemisphereLight('#fff4ea', '#3a2a30', 1.3));
+  const key = new THREE.DirectionalLight('#ffffff', 2.4);
   key.position.set(-1.5, 3, 4);
   scene.add(key);
   rim = new THREE.DirectionalLight('#ff9a50', 1.4);
@@ -180,17 +195,23 @@ async function cargar(id, { url, contraluz, anims }) {
     sup.tracks = c.tracks.filter(t => !PIERNAS.test(t.name.split('.')[0]));
     clips[inf.name] = inf; clips[sup.name] = sup;
   }
+  if (!renderer) iniciarRender();
   g.scene.traverse(o => {
     if (o.isMesh) {
       o.frustumCulled = false;
-      const m = o.material;
-      o.material = new THREE.MeshLambertMaterial({ map: m.map });   // más barato que el material estándar
+      const map = o.material.map;
+      if (map) {
+        // textura nítida también vista de lado (filtrado anisótropo) y con sus mipmaps
+        map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        map.colorSpace = THREE.SRGBColorSpace;
+        map.needsUpdate = true;
+      }
+      o.material = new THREE.MeshStandardMaterial({ map, roughness: 0.72, metalness: 0.05, envMapIntensity: 0.55 });
     }
   });
   const base = { scene: g.scene, clips, info: {}, caderaY: 1, contraluz: new THREE.Color(contraluz || '#ff9a50'),
     originales: animaciones, hipsRest };
   analizar(base);
-  if (!renderer) iniciarRender();
   bases[id] = base;
   return base;
 }
@@ -363,7 +384,7 @@ function pintar(it, o) {
 // Dibuja la instancia en el contexto 2D del juego, con los pies en (x, y)
 const tmpV = new THREE.Vector3();
 function dibujar(ctx, it, x, y, escala, angulo) {
-  const res = Math.min(MAX_RES, Math.max(1, typeof RES === 'number' ? RES : 1));
+  const res = Math.min(MAX_RES_PJ, Math.max(1, typeof RES === 'number' ? RES : 1) * SUPERMUESTREO);
   const vw = Math.round(BOX_W * escala * res), vh = Math.round(BOX_H * escala * res);
   const ch = renderer.domElement.height;
   renderer.setViewport(0, 0, vw, vh);
@@ -379,7 +400,10 @@ function dibujar(ctx, it, x, y, escala, angulo) {
     ctx.save();
     ctx.translate(px, py); ctx.rotate(angulo); ctx.translate(-px, -py);
   }
+  const calidad = ctx.imageSmoothingQuality;
+  ctx.imageSmoothingQuality = 'high';   // reducción de buena calidad
   ctx.drawImage(renderer.domElement, 0, ch - vh, vw, vh, dx, dy, BOX_W * escala, BOX_H * escala);
+  ctx.imageSmoothingQuality = calidad;
   if (angulo) ctx.restore();
   // de un punto del esqueleto (mundo 3D) a coordenadas de la pantalla del juego
   return nombre => {
@@ -611,7 +635,14 @@ const R3D = {
 };
 
 window.R3D = R3D;
-for (const [id, cfg] of Object.entries(MODELOS)) {
+// Los modelos se cargan solo cuando hacen falta (al elegir al personaje o al empezar la pelea):
+// cargarlos todos al inicio gastaría demasiada memoria en el teléfono. Mientras cargan, se ve el dibujo 2D.
+function pedir(id) {
+  const cfg = MODELOS[id];
+  if (!cfg || cargas[id]) return;
+  if (cfg.anims) pedir(cfg.anims);
   cargas[id] = cargar(id, cfg);
   cargas[id].catch(e => console.warn('Modelo 3D no disponible (' + id + '); se usa el dibujo 2D.', e));
 }
+R3D.pedir = ch => ch && pedir(ch.id);
+pedir('kaizen');   // es el primero de la lista y el que presta sus animaciones
