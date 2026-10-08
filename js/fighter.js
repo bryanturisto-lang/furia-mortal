@@ -515,6 +515,7 @@ function drawFigure(ctx, ch, p, o = {}) {
 }
 
 function drawCharAt(ctx, ch, pose, x, y, facing = 1, scale = 1, o = {}) {
+  if (window.R3D && R3D.has(ch)) { R3D.drawAt(ctx, ch, x, y, facing, scale, o); return; }
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(facing * scale * (ch.look.bulk || 1), scale * (ch.look.bulk || 1));
@@ -1177,10 +1178,12 @@ class Fighter {
     const p = this.pose, L = p.lean * Math.PI / 180;
     const ux = Math.sin(L), uy = -Math.cos(L), nx = Math.cos(L), ny = Math.sin(L);
     const hx = ux * (TORSO + 21) + nx * 2, hy = uy * (TORSO + 21) + ny * 2;
-    this.headPos = this.toWorld(hx, hy);
+    // en 3D, la cabeza y las manos salen del esqueleto del modelo (último dibujo)
+    const en3d = window.R3D && R3D.has(this.ch) && this.manos3d;
+    this.headPos = en3d && this.cabeza3d ? this.cabeza3d : this.toWorld(hx, hy);
 
     const tail = this.ch.look.tail;
-    if (tail && !this.hidden && !this.gone) {
+    if (tail && !this.hidden && !this.gone && !en3d) {
       const an = TAIL_ANCHOR[this.ch.look.head] || [-12, -2];
       const [wx, wy] = this.toWorld(hx + an[0] * nx - an[1] * ny, hy + an[0] * ny + an[1] * nx);
       this.updateTail(wx, wy, tail);
@@ -1188,6 +1191,7 @@ class Fighter {
 
     if (this.ch.look.chains) {
       if (this.hidden || this.gone) this.chains = null;
+      else if (en3d) this.updateChains(this.manos3d);
       else {
         const fa = ik(ux * TORSO + 4, uy * TORSO, ux * TORSO + p.fh[0], uy * TORSO + p.fh[1], UARM, FARM, 1);
         const ba = ik(ux * TORSO - 6, uy * TORSO + 3, ux * TORSO + p.bh[0], uy * TORSO + p.bh[1], UARM, FARM, 1);
@@ -1300,9 +1304,10 @@ class Fighter {
     if (this.hidden || this.gone) return;
     let alpha = 1;
     if (this.invis > 0) alpha = this.flash > 0 ? 0.6 : 0.1 + 0.05 * Math.sin(this.t * 0.3);
+    const en3d = window.R3D && R3D.has(this.ch);
 
     // estela de velocidad
-    if (alpha === 1) {
+    if (alpha === 1 && !en3d) {
       this.trail.forEach((s, i) => {
         ctx.globalAlpha = 0.1 + i * 0.06;
         this.drawPose(ctx, camX, s, { tint: this.trailColor || this.ch.color, headless: this.headless });
@@ -1311,7 +1316,7 @@ class Fighter {
     }
 
     ctx.globalAlpha = alpha;
-    if (this.scarf && !this.headless) this.drawTail(ctx, camX);
+    if (this.scarf && !this.headless && !en3d) this.drawTail(ctx, camX);
     if (this.chains) this.drawChain(ctx, camX, 1);
 
     const melting = this.melt > 0;
@@ -1322,9 +1327,12 @@ class Fighter {
       ctx.clip();
       ctx.translate(0, this.melt * 200 * this.bulk);
     }
-    this.drawPose(ctx, camX, { x: this.x, y: this.y, facing: this.facing, pose: this.pose,
-      lying: LYING.has(this.state), spinT: this.spinT },
-      { flash: this.flash > 1, frozen: this.frozen > 0, tint: this.tint, headless: this.headless });
+    const look = { flash: this.flash > 1, frozen: this.frozen > 0, tint: this.tint, headless: this.headless };
+    if (en3d) R3D.drawFighter(ctx, this, camX, look);
+    else {
+      this.drawPose(ctx, camX, { x: this.x, y: this.y, facing: this.facing, pose: this.pose,
+        lying: LYING.has(this.state), spinT: this.spinT }, look);
+    }
     if (melting) ctx.restore();
     if (this.chains && !melting) this.drawChain(ctx, camX, 0);
     ctx.globalAlpha = 1;

@@ -33,7 +33,7 @@ jobs:
       - name: Copiar el juego dentro de la app
         run: |
           mkdir -p android/app/src/main/assets/www
-          cp -r index.html style.css manifest.webmanifest js icons android/app/src/main/assets/www/
+          cp -r index.html style.css manifest.webmanifest js icons modelos android/app/src/main/assets/www/
 
       - name: Preparar la llave de firma
         env:
@@ -101,7 +101,7 @@ jobs:
       - name: Preparar sitio
         run: |
           mkdir _site
-          cp -r index.html style.css manifest.webmanifest sw.js js icons _site/
+          cp -r index.html style.css manifest.webmanifest sw.js js icons modelos _site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

@@ -53,9 +53,15 @@
   <script src="js/fx.js"></script>
   <script src="js/stage.js"></script>
   <script src="js/game.js"></script>
+  <!-- Personajes en 3D (three.js incluido en el juego para que funcione sin internet) -->
+  <script type="importmap">
+    { "imports": { "three": "./js/vendor/three/three.module.min.js", "three/addons/": "./js/vendor/three/addons/" } }
+  </script>
+  <script type="module" src="js/render3d.js"></script>
   <script>
     // Instalable y jugable sin internet (solo cuando se sirve desde una web real)
-    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    // (en la app de Android no hace falta: el juego ya viene dentro del APK)
+    if ('serviceWorker' in navigator && location.protocol === 'https:' && location.hostname !== 'appassets.androidplatform.net') {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
   </script>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Empaquetar 3D · Furia Mortal</title>
+  <style>body { background: #20242c; color: #ddd; font: 14px system-ui, sans-serif; padding: 12px; } pre { white-space: pre-wrap; }</style>
+</head>
+<body>
+  <pre id="log">Listo. Llama a empaquetar(...) desde la consola.</pre>
+  <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+  <script type="module">
+    // Herramienta de desarrollo: junta el personaje riggeado de Meshy y todas sus animaciones
+    // en un solo GLB liviano para el juego (textura reducida a JPG, animaciones sin desplazamiento horizontal).
+    // empaquetar({ base, anims: {nombre: archivo}, salida, lado: 1024 })  -> guarda vía el puente local (127.0.0.1:8099)
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+    const log = m => { document.getElementById('log').textContent += '\n' + m; };
+    const loader = new GLTFLoader();
+
+    // deja la cadera en su sitio en el plano horizontal (el juego mueve al luchador por su cuenta):
+    // quita el avance de principio a fin y el desfase inicial, pero conserva el balanceo
+    function enSitio(clip, hips) {
+      const tr = clip.tracks.find(t => t.name === hips.name + '.position');
+      if (!tr) return;
+      const v = tr.values, n = v.length / 3, rx = hips.position.x, rz = hips.position.z;
+      const x0 = v[0], z0 = v[2], x1 = v[v.length - 3], z1 = v[v.length - 1];
+      for (let i = 0; i < n; i++) {
+        const k = n > 1 ? i / (n - 1) : 0;
+        v[i * 3] += rx - (x0 + (x1 - x0) * k);
+        v[i * 3 + 2] += rz - (z0 + (z1 - z0) * k);
+      }
+    }
+
+    window.empaquetar = async ({ base, anims, salida, lado = 1024, quieto = [] }) => {
+      const g = await loader.loadAsync(base);
+      const scene = g.scene;
+      let hips = null;
+      scene.traverse(o => { if (o.isBone && /Hips$/.test(o.name)) hips = hips || o; });
+      log('base: ' + base + ' · cadera: ' + (hips && hips.name));
+
+      // textura más liviana
+      scene.traverse(o => {
+        if (!o.isMesh) return;
+        // material simple: solo color (sin brillo metálico ni emisión), más barato en el teléfono
+        const m = o.material = new THREE.MeshStandardMaterial({ map: o.material.map, roughness: 0.85, metalness: 0 });
+        if (m.map) {
+          const img = m.map.image, c = document.createElement('canvas');
+          c.width = c.height = lado;
+          c.getContext('2d').drawImage(img, 0, 0, lado, lado);
+          m.map.image = c;
+          m.map.userData.mimeType = 'image/jpeg';
+          m.map.needsUpdate = true;
+        }
+      });
+
+      const clips = [];
+      for (const [nombre, archivo] of Object.entries(anims)) {
+        const a = await loader.loadAsync(archivo);
+        const clip = a.animations[0].clone();
+        clip.name = nombre;
+        if (!quieto.includes(nombre) && hips) enSitio(clip, hips);
+        clips.push(clip);
+        log(`  ${nombre}: ${clip.duration.toFixed(2)} s · ${clip.tracks.length} pistas`);
+      }
+
+      const glb = await new GLTFExporter().parseAsync(scene, { binary: true, animations: clips });
+      const r = await fetch('http://127.0.0.1:8099/guardar/' + salida, { method: 'POST', body: glb });
+      log('guardado: ' + (await r.text()) + ' · ' + (glb.byteLength / 1e6).toFixed(2) + ' MB');
+      return glb.byteLength;
+    };
+
+    // para inspeccionar el desplazamiento de la cadera de una animación
+    window.cadera = async archivo => {
+      const a = await loader.loadAsync(archivo);
+      const tr = a.animations[0].tracks.find(t => /Hips\.position$/.test(t.name));
+      const v = tr.values, n = v.length / 3, ini = [v[0], v[1], v[2]], fin = [v[v.length - 3], v[v.length - 2], v[v.length - 1]];
+      return { pista: tr.name, n, ini: ini.map(x => +x.toFixed(3)), fin: fin.map(x => +x.toFixed(3)) };
+    };
+    window.listo = true;
+  </script>
+</body>
+</html>

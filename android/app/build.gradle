@@ -42,3 +42,8 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+
+dependencies {
+    // sirve el juego desde una dirección https interna (necesario para módulos JS y modelos 3D)
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

@@ -5,6 +5,9 @@ firma/
 *.jks
 *.keystore
 
+# Modelos 3D en preparación (pesados); solo se subirán las versiones finales para el juego
+modelos3d/
+
 # Compilación de Android
 android/.gradle/
 android/build/

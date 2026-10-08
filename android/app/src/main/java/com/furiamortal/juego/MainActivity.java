@@ -5,8 +5,13 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
+
+import androidx.webkit.WebViewAssetLoader;
 
 /** Abre el juego (incluido dentro del APK) a pantalla completa. No necesita internet. */
 public class MainActivity extends Activity {
@@ -25,9 +30,20 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         web.setBackgroundColor(0xFF000000);
         web.setWebChromeClient(new WebChromeClient());
+        // los archivos del juego se sirven como https://appassets.androidplatform.net/assets/www/...
+        // (con file:// el navegador bloquea los módulos JS y la carga de los modelos 3D)
+        final WebViewAssetLoader assets = new WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                .build();
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                return assets.shouldInterceptRequest(request.getUrl());
+            }
+        });
         setContentView(web);
         hideSystemBars();
-        web.loadUrl("file:///android_asset/www/index.html");
+        web.loadUrl("https://appassets.androidplatform.net/assets/www/index.html");
     }
 
     @SuppressWarnings("deprecation")

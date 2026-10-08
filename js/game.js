@@ -1253,7 +1253,7 @@ const Game = {
           const b = Math.sin(this.t * st.speed) * st.bob;
           pose.h += b; pose.ff[1] += b; pose.bf[1] += b; pose.fh[1] += b * 1.3; pose.bh[1] += b * 1.3;
         }
-        drawCharAt(ctx, ch, pose, x, 468, facing, 1.15);
+        drawCharAt(ctx, ch, pose, x, 468, facing, 1.15, { anim3d: locked ? 'victoria' : 'guardia', slot: label });
         drawText(ctx, ch.name, x, 496, 36, locked ? '#ffd84a' : '#fff');
         const bio = ch.bio.toUpperCase(), cut = bio.indexOf(' ', Math.floor(bio.length / 2));
         if (bio.length > 26 && cut > 0) {
@@ -1294,7 +1294,7 @@ const Game = {
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(0, 0, W, H);
     const ch = CHARACTERS[this.sel[0]];
-    drawCharAt(ctx, ch, POSES[ch.win] || POSES.win, W / 2, GROUND_Y, 1, 1.5);
+    drawCharAt(ctx, ch, POSES[ch.win] || POSES.win, W / 2, GROUND_Y, 1, 1.5, { anim3d: 'victoria' });
     drawText(ctx, '¡CAMPEÓN DEL TORNEO!', W / 2, 90, 72, fireGradient(ctx, 90, 72));
     drawText(ctx, `${ch.name} HA VENCIDO A TODOS LOS GUERREROS`, W / 2, 150, 26, '#fff');
     if (this.st > 60 && Math.floor(this.t / 30) % 2 === 0) drawText(ctx, `${keyName('ENTER')}: VOLVER AL MENÚ`, W / 2, H - 30, 24, '#ffd84a');

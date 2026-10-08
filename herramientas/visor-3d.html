@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Visor 3D · Furia Mortal</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #20242c; color: #ddd; font: 14px system-ui, sans-serif; }
+    canvas { display: block; }
+    #info { position: fixed; left: 10px; top: 10px; }
+  </style>
+</head>
+<body>
+  <div id="info">Cargando…</div>
+  <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    } }
+  </script>
+  <script type="module">
+    // Herramienta de desarrollo: muestra un modelo GLB desde varios ángulos.
+    // Uso: visor-3d.html?modelo=../modelos3d/kaizen/kaizen.glb
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ?modelo=archivo.glb|fbx  &textura=imagen.jpg (opcional, para FBX de Mixamo sin textura)
+    const qs = new URLSearchParams(location.search);
+    const url = qs.get('modelo') || '../modelos3d/kaizen/kaizen.glb';
+    const texUrl = qs.get('textura');
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    // tamaño fijo si la ventana está oculta o es muy chica (para poder sacar capturas)
+    const VW = innerWidth > 200 ? innerWidth : 720, VH = innerHeight > 200 ? innerHeight : 860;
+    renderer.setSize(VW, VH);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#20242c');
+    scene.add(new THREE.HemisphereLight('#ffffff', '#40404a', 2.2));
+    const sun = new THREE.DirectionalLight('#ffffff', 2.2);
+    sun.position.set(2, 4, 3);
+    scene.add(sun);
+
+    const camera = new THREE.PerspectiveCamera(30, VW / VH, 0.01, 100);
+    const controls = new OrbitControls(camera, renderer.domElement);
+
+    const isFbx = /\.fbx$/i.test(url);
+    const loaded = isFbx ? await new FBXLoader().loadAsync(url) : await new GLTFLoader().loadAsync(url);
+    const model = isFbx ? loaded : loaded.scene;
+    const gltf = { animations: loaded.animations || [] };
+    if (texUrl) {
+      const tex = await new THREE.TextureLoader().loadAsync(texUrl);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = true;
+      model.traverse(o => { if (o.isMesh) o.material = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }); });
+    }
+    // algunos modelos llegan sin normales (se verían negros)
+    model.traverse(o => { if (o.isMesh && !o.geometry.attributes.normal) o.geometry.computeVertexNormals(); });
+    if (texUrl) {
+      // ya aplicada arriba
+    } else if (isFbx) {
+      // los FBX de Mixamo pueden traer un material negro: usar gris claro para ver la forma
+      model.traverse(o => { if (o.isMesh) o.material = new THREE.MeshStandardMaterial({ color: '#c8c8cc', roughness: 0.7 }); });
+    }
+    scene.add(model);
+    // animación: se puede fijar un instante con verPose(segundos)
+    const mixer = new THREE.AnimationMixer(model);
+    let action = null;
+    if (gltf.animations.length) { action = mixer.clipAction(gltf.animations[0]); action.play(); action.paused = true; }
+    window.verPose = t => { if (action) { action.time = t; mixer.update(0); } renderer.render(scene, camera); };
+    window.duracion = gltf.animations.length ? gltf.animations[0].duration : 0;
+    window.huesos = [];
+    model.traverse(o => { if (o.isBone) huesos.push(o.name); });
+    // para medir desde la consola: posición en el mundo de un hueso, con o sin animación
+    window.modelo = model;
+    window.posHueso = (nombre, conAnim = true) => {
+      if (action) { action.enabled = conAnim; action.time = 0; mixer.update(0); }
+      if (!conAnim) model.traverse(o => { if (o.isSkinnedMesh) o.skeleton.pose(); });
+      let b = null;
+      model.traverse(o => { if (o.isBone && o.name.endsWith(nombre)) b = o; });
+      if (!b) return null;
+      model.updateMatrixWorld(true);
+      return b.getWorldPosition(new THREE.Vector3()).toArray().map(v => +v.toFixed(3));
+    };
+    if (action) { action.time = 0; mixer.update(0); }
+    model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(model, true);  // preciso: tiene en cuenta el esqueleto
+    const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+    let tris = 0;
+    model.traverse(o => { if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+    window.modelInfo = { size: size.toArray().map(v => +v.toFixed(3)), tris, animations: gltf.animations.map(a => a.name) };
+    document.getElementById('info').textContent = `${url} · ${tris} triángulos · animaciones: ${gltf.animations.length}`;
+
+    const dist = size.y * 2.2;
+    controls.target.copy(center);
+    // vista desde un ángulo (grados alrededor del eje vertical)
+    window.view = deg => {
+      const r = THREE.MathUtils.degToRad(deg);
+      // en modelos animados, encuadrar alrededor de la cadera actual
+      let c = center;
+      if (action) {
+        let hips = null;
+        model.traverse(o => { if (o.isBone && /Hips$/.test(o.name)) hips = o; });
+        if (hips) { model.updateMatrixWorld(true); c = hips.getWorldPosition(new THREE.Vector3()); c.y += size.y * 0.06; }
+      }
+      const d = Math.max(size.x, size.y, size.z) * 2.4;
+      camera.position.set(c.x + Math.sin(r) * d, c.y + size.y * 0.08, c.z + Math.cos(r) * d);
+      camera.lookAt(c);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    view(0);
+    renderer.setAnimationLoop(() => renderer.render(scene, camera));
+    window.ready = true;
+  </script>
+</body>
+</html>
