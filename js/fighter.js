@@ -165,6 +165,75 @@ function drawFireChain(ctx, pal, pts, t) {
   const n = pts.length;
   drawSickle(ctx, pts[n - 2], pts[n - 1], Math.atan2(pts[n - 1] - pts[n - 3], pts[n - 2] - pts[n - 4]), pal);
 }
+
+// Cadena de la Lanza Infernal: eslabones al rojo vivo, llamas y un gancho grande en la punta.
+// pts = [x0,y0,x1,y1,...] desde la mano hasta el gancho; t = reloj para animar el fuego.
+function drawHookChain(ctx, pts, t, hookAng) {
+  const n = pts.length;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // resplandor
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = 'rgba(255,90,20,0.35)';
+  ctx.lineWidth = 14;
+  ctx.beginPath();
+  ctx.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < n; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
+  // alma oscura de la cadena
+  ctx.strokeStyle = '#2a1208';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  // eslabones: uno de frente y uno de canto, alternados cada 8 px
+  let acc = 0, k = 0;
+  for (let i = 2; i < n; i += 2) {
+    const ax = pts[i - 2], ay = pts[i - 1], bx = pts[i], by = pts[i + 1];
+    const len = Math.hypot(bx - ax, by - ay), ang = Math.atan2(by - ay, bx - ax);
+    for (; acc < len; acc += 8, k++) {
+      const x = ax + (bx - ax) * acc / len, y = ay + (by - ay) * acc / len;
+      const hot = 0.6 + 0.4 * Math.sin(t * 0.4 - k * 0.7);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.strokeStyle = `rgb(255,${Math.round(110 + hot * 110)},${Math.round(30 + hot * 40)})`;
+      ctx.lineWidth = k % 2 ? 2.2 : 1.8;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 5, k % 2 ? 1.4 : 3.2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    acc -= len;
+  }
+  // lenguas de fuego que suben de la cadena
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 2; i < n; i += 2) {
+    const f = Math.sin(t * 0.55 + i * 1.3) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(255,${Math.round(120 + f * 80)},40,0.5)`;
+    ctx.beginPath();
+    ctx.ellipse(pts[i], pts[i + 1] - 4 - f * 5, 3, 5 + f * 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // gancho
+  const hx = pts[n - 2], hy = pts[n - 1];
+  const g = ctx.createRadialGradient(hx, hy, 2, hx, hy, 30);
+  g.addColorStop(0, 'rgba(255,220,120,0.9)');
+  g.addColorStop(0.4, 'rgba(255,110,20,0.45)');
+  g.addColorStop(1, 'rgba(255,60,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(hx, hy, 30, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  const ang = hookAng != null ? hookAng : Math.atan2(hy - pts[n - 3], hx - pts[n - 4]);
+  ctx.save();
+  ctx.translate(hx, hy);
+  ctx.rotate(ang);
+  if (Math.cos(ang) < 0) ctx.scale(1, -1);   // la curva del gancho siempre hacia arriba
+  drawSickle(ctx, 0, 0, 0, { lava: '#ff7a1a', flat: false }, 1.9);
+  ctx.restore();
+}
 const tintCache = {};
 function fighterPalette(ch, o) {
   if (o.flash) return FLASH_PAL;

@@ -23,6 +23,7 @@ const store = {
 const ERUPT = { dmg: 11, w: 70, h: 220, color: '#7dff6a', effect: 'launch', style: 'erupt' };
 const LADDER_SIZE = 7;
 const GRID_COLS = 4;
+const HOOK_PULL = 16;     // frames que tarda la cadena de la Lanza Infernal en arrastrar al rival
 const PROJ_SFX = { dragon: 'fuego', fuegoBajo: 'fuego', nube: 'acido', orbe: 'sombra', calavera: 'fuego' };
 
 const Game = {
@@ -33,7 +34,7 @@ const Game = {
   fx: new FX(), banners: [], projectiles: [],
   f: [], cpu: [false, false], ai: null,
   wins: [0, 0], round: 1, timer: 99, timerF: 0,
-  winner: null, loser: null, fatal: null, fatalityDone: false, combo: null, ghost: null, fanFly: null,
+  winner: null, loser: null, fatal: null, fatalityDone: false, combo: null, ghost: null, fanFly: null, hooks: [],
   sel: [0, 1], locked: [false, false], lockT: 0, ladder: [], ladderIdx: 0,
 
   init() {
@@ -178,6 +179,7 @@ const Game = {
     this.f[1].reset(STAGE_W / 2 + 170, -1);
     for (const f of this.f) f.state = 'intro';
     this.projectiles = [];
+    this.hooks = [];
     this.fx.clear();
     this.banners = [];
     this.timer = 99;
@@ -293,6 +295,7 @@ const Game = {
     this.checkHit(a, b);
     this.checkHit(b, a);
     this.updateProjectiles();
+    this.updateHooks();
     this.separate();
     this.updateCamera();
     for (const f of this.f) f.dispHp = f.dispHp > f.hp ? Math.max(f.hp, f.dispHp - 0.35) : f.hp;
@@ -332,7 +335,10 @@ const Game = {
     switch (eff) {
       case 'freeze': def.frozen = 100; Sound.special('freeze'); break;
       case 'pull':
-        def.x = att.x + att.facing * 85; def.stun = 60; def.pulled = 1; def.vx = 0;
+        // el gancho queda clavado y la cadena arrastra al rival hasta KAIZEN (ver updateHooks)
+        def.stun = 60 + HOOK_PULL; def.pulled = 1; def.vx = 0;
+        this.hooks.push({ owner: att, def, t: 0, dur: HOOK_PULL, x0: def.x, x1: att.x + att.facing * 85 });
+        this.shake = Math.max(this.shake, 6);
         Sound.say('¡Ven aquí!', 0.5, 1.1);
         break;
       case 'daze': def.stun = Math.max(def.stun, 55); def.pulled = 1; break;
@@ -420,6 +426,7 @@ const Game = {
     l.vx = 0;
     l.state = 'dizzy';
     this.projectiles = [];
+    this.hooks = [];
     this.banners = [];
     this.ghost = null;
     this.fanFly = null;
@@ -630,7 +637,11 @@ const Game = {
       this.projHit(p, opp, p.x, p.y);
     }
     for (const p of ps) {
-      if (p.dead && !p.counted) { p.counted = true; p.owner.projCount = Math.max(0, p.owner.projCount - 1); }
+      if (p.dead && !p.counted) {
+        p.counted = true; p.owner.projCount = Math.max(0, p.owner.projCount - 1);
+        // si la cadena no enganchó a nadie, vuelve a la mano
+        if (p.spec.style === 'lanza' && !p.hooked) this.hooks.push({ owner: p.owner, def: null, t: 0, dur: 10, x: p.x, y: p.y });
+      }
     }
     this.projectiles = ps.filter(p => !p.dead);
   },
@@ -638,7 +649,14 @@ const Game = {
   projTrail(p) {
     const sp = p.spec;
     switch (sp.style) {
-      case 'lanza': case 'bolt': case 'net': break;
+      case 'lanza':
+        // brasas que deja el gancho al volar
+        for (let i = 0; i < 2; i++) {
+          this.fx.add({ x: p.x - p.dir * rand(0, 20), y: p.y + rand(-8, 8), vx: -p.dir * rand(0.5, 2), vy: rand(-1.5, 0.3), g: -0.02,
+            life: rand(12, 22), size: rand(1.5, 3), color: chance(0.5) ? '#ffcc40' : '#ff7a1a', kind: 'glow' });
+        }
+        break;
+      case 'bolt': case 'net': break;
       case 'missile':
         this.fx.add({ x: p.x - p.dir * 26, y: p.y + rand(-3, 3), vx: -p.dir * rand(0.5, 2), vy: rand(-0.6, 0.2), g: 0,
           life: rand(14, 26), size: rand(5, 10), color: '#666', kind: 'puff' });
@@ -676,7 +694,53 @@ const Game = {
     if (res === 'none') return;
     this.impact(res, x, y, dir, m, opp);
     this.fx.burst(x, y, sp.color, 22);
-    if (res === 'hit') this.applyEffect(p.owner, opp, sp.effect);
+    if (res === 'hit') {
+      const before = this.hooks.length;
+      this.applyEffect(p.owner, opp, sp.effect);
+      if (sp.style === 'lanza' && this.hooks.length > before) {
+        p.hooked = true;
+        this.fx.burst(x, y, '#ffd060', 26, 7);
+      }
+    }
+  },
+
+  // Cadenas de la Lanza Infernal después del lanzamiento: arrastrando al rival enganchado o volviendo a la mano
+  hookHand(f) {
+    return f.manos3d && window.R3D && R3D.has(f.ch) ? f.manos3d[0] : [f.x + f.facing * 50, f.y - 140];
+  },
+
+  updateHooks() {
+    for (const h of this.hooks) {
+      h.t++;
+      if (h.def) {
+        const d = h.def;
+        if (d.state !== 'hit' || h.owner.state === 'hit' || h.owner.state === 'launched') { h.t = h.dur; continue; }
+        const k = h.t / h.dur, e = k * k;   // arranca lento y llega de golpe
+        d.x = lerp(h.x0, h.x1, e);
+        if (h.t % 2 === 0) {
+          this.fx.add({ x: d.x + rand(-10, 10), y: GROUND_Y - 2, vx: -h.owner.facing * rand(0.5, 2), vy: rand(-2, -0.5), g: 0.15,
+            life: rand(14, 24), size: rand(3, 6), color: '#6a5040', kind: 'puff' });
+        }
+        if (h.t === h.dur) { this.fx.burst(d.x, d.y - 120, '#ffb030', 18); this.shake = Math.max(this.shake, 5); }
+      }
+    }
+    this.hooks = this.hooks.filter(h => h.t < h.dur);
+  },
+
+  drawHooks(camX) {
+    for (const h of this.hooks) {
+      const o = h.owner, [hx, hy] = this.hookHand(o);
+      let ex, ey;
+      if (h.def) { ex = h.def.x + o.facing * 6; ey = h.def.y - 128; }
+      else { const k = h.t / h.dur; ex = lerp(h.x, hx, k * k); ey = lerp(h.y, hy, k * k); }
+      const pts = [];
+      const tense = h.def ? 2 : 8 * (1 - h.t / h.dur);
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        pts.push(lerp(hx, ex, t) - camX, lerp(hy, ey, t) + Math.sin(t * Math.PI) * tense * Math.sin(this.t * 0.9 + t * 8));
+      }
+      drawHookChain(ctx, pts, this.t * 3);
+    }
   },
 
   explode(p) {
@@ -739,6 +803,7 @@ const Game = {
     const order = this.f[0].state === 'attack' || this.f[0].state === 'grab' ? [this.f[1], this.f[0]] : [this.f[0], this.f[1]];
     for (const f of order) f.draw(ctx, camX);
     this.drawProjectiles(camX);
+    this.drawHooks(camX);
     if (this.state === 'fatality') this.drawFatalityFx(camX);
     this.fx.draw(ctx, camX);
     this.drawSpecialNames(camX);
@@ -821,15 +886,15 @@ const Game = {
       ctx.shadowBlur = 18;
       switch (p.spec.style) {
         case 'lanza': {
-          // cadena de fuego que sale de la mano y termina en una hoz
+          // cadena de fuego que sale de la mano de KAIZEN como un látigo y termina en un gancho
           ctx.shadowBlur = 0;
-          const o = p.owner, hx = o.x - camX + o.facing * 50, hy = o.y - 140;
-          const pts = [];
-          for (let i = 0; i <= 10; i++) {
-            const t = i / 10;
-            pts.push(lerp(hx, x, t), lerp(hy, y, t) + Math.sin(t * Math.PI) * 10 * Math.sin(p.t * 0.6));
+          const [hx, hy] = this.hookHand(p.owner);
+          const pts = [], amp = 16 * Math.max(0.25, 1 - p.t / 18);
+          for (let i = 0; i <= 14; i++) {
+            const t = i / 14;
+            pts.push(lerp(hx - camX, x, t), lerp(hy, y, t) + Math.sin(t * Math.PI) * amp * Math.sin(p.t * 0.7 - t * 9));
           }
-          drawFireChain(ctx, basePalette(o.ch), pts, p.t * 3);
+          drawHookChain(ctx, pts, p.t * 3, d > 0 ? 0 : Math.PI);
           break;
         }
         case 'ice': {

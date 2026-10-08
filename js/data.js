@@ -10,7 +10,7 @@ const CHARACTERS = [
   { id: 'kaizen', name: 'KAIZEN', color: '#b81f18', dark: '#5e0f0b', skin: '#c98a62', eyes: '#ffb030', glow: true,
     look: { head: 'mask', torso: 'warrior', arms: 'warrior', pants: '#1c1a1f', boots: '#2a2326', hair: '#151214',
       lava: '#ff7a1a', mask: '#2b2629', armor: '#211d22', knee: true, pauldron: true, collar: true, tabard: 'tattered',
-      chains: true, aura: ['#ff8a1a', '#ffcc40'], bulk: 1.04, tail: { color: '#a81c14', len: 7, width: 9, tattered: true } },
+      aura: ['#ff8a1a', '#ffcc40'], bulk: 1.04, tail: { color: '#a81c14', len: 7, width: 9, tattered: true } },
     stance: 'ninja', intro: 'taunt', win: 'winPoint',
     bio: 'Espectro vengativo del inframundo.',
     specials: [
