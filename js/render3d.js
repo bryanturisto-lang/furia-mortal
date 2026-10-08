@@ -17,17 +17,23 @@ const PPM = 104;                               // píxeles del juego por metro (
 const BOX_W = 400, BOX_H = 350, FOOT = 40;     // recuadro de cada luchador (px del juego) y margen bajo los pies
 const MAX_ESCALA = 1.6, MAX_RES = 2;
 const GIRO = 62 * Math.PI / 180;               // de perfil (90°), girado un poco hacia la cámara
-const FADE = 7;                                // frames de transición entre animaciones
 const CABEZA_Y = 1.58;                         // altura de la cabeza en guardia (m): iguala la estatura de todos
+// frames de transición entre animaciones: rápida al recibir un golpe, más lenta al volver a la guardia
+const FADE = { golpe: 4, ataque: 5, guardia: 10, normal: 8 };
+const VEL_MAX_PREP = 2;                        // la preparación de un golpe va, como mucho, al doble de su velocidad real
+const VEL_GOLPE = 1.25;                        // el golpe y la recuperación, casi a velocidad real
 
 // golpe del juego (move.pose) → animación
 const ATAQUE = {
-  hp: 'puno_alto', lp: 'puno_bajo', hk: 'patada_alta', lk: 'patada_alta', rh: 'patada_giro', upper: 'gancho',
-  sweep: 'barrida', clk: 'barrida', clp: 'puno_bajo', jp: 'puno_alto', jk: 'patada_alta',
+  hp: 'puno_alto', lp: 'puno_bajo', hk: 'patada_lateral', lk: 'patada_media', rh: 'patada_giro', upper: 'gancho',
+  sweep: 'barrida_baja', clk: 'barrida_baja', clp: 'puno_bajo', jp: 'puno_alto', jk: 'patada_alta',
   throw: 'agarre', throwToss: 'agarre', cast: 'bola_fuego', castUp: 'bola_fuego', quake: 'bola_fuego',
   flypunch: 'puno_volador', flykick: 'puno_volador', torpedo: 'puno_volador', charge: 'puno_volador', bike: 'puno_volador',
-  shadowkick: 'patada_giro', spin: 'patada_giro', slide: 'barrida',
+  shadowkick: 'patada_giro', spin: 'patada_giro', slide: 'barrida_baja',
 };
+// animaciones de desplazamiento: se miden para que los pies no patinen sobre el suelo
+const ANDAR = ['caminar_adelante', 'caminar_atras', 'correr'];
+const GOLPEADO = new Set(['hit', 'launched', 'held', 'lifted']);
 const AGACHADO = new Set(['clp']);   // golpes agachados: piernas en cuclillas, brazos del golpe
 const EN_AIRE = new Set(['jp']);     // golpes en el aire: piernas del salto, brazos del golpe
 const T_CUCLILLAS = 0.32;            // instante de 'saltar' en que está agachado tomando impulso
@@ -99,8 +105,24 @@ function analizar(base) {
         if (d > mejor) { mejor = d; impacto = t; }
       }
     }
+    // velocidad a la que avanza el cuerpo: es la velocidad con que se desliza hacia atrás el pie apoyado
+    let paso = 0;
+    if (ANDAR.includes(nombre)) {
+      const pies = [huesos.LeftFoot, huesos.RightFoot], M = 60, dt = clip.duration / M;
+      let dist = 0, tiempo = 0, prev = null;
+      for (let i = 0; i <= M; i++) {
+        act.time = Math.min(clip.duration - 0.001, i * dt);
+        mixer.update(0);
+        root.updateMatrixWorld(true);
+        const p = pies.map(b => b.getWorldPosition(new THREE.Vector3()));
+        const abajo = p[0].y <= p[1].y ? 0 : 1;
+        if (prev && prev.pie === abajo) { dist += Math.abs(p[abajo].z - prev.z); tiempo += dt; }
+        prev = { pie: abajo, z: p[abajo].z };
+      }
+      paso = tiempo > 0 ? dist / tiempo : 0;
+    }
     act.stop();
-    base.info[nombre] = { dur: clip.duration, impacto };
+    base.info[nombre] = { dur: clip.duration, impacto, paso };
   }
   mixer.stopAllAction();
   root.traverse(o => { if (o.isSkinnedMesh) o.skeleton.pose(); });
@@ -149,8 +171,8 @@ function instancia(key, id) {
     a.play(); a.paused = true; a.enabled = false;
     acciones[n] = a;
   }
-  it = { base, root, mixer, acciones, mats, huesos, actual: null, previa: null, mezcla: 1, clave: '',
-    estado: null, ataque: -1, t0: 0, desdeSuelo: false, tinte: '' };
+  it = { base, root, mixer, acciones, mats, huesos, actual: null, previa: null, mezcla: 1, clave: '', fade: FADE.normal,
+    estado: null, ataque: -1, t0: 0, desdeSuelo: false, tinte: '', ultT: null, dtf: 1, giro: null, fase: {} };
   instancias.set(key, it);
   return it;
 }
@@ -159,15 +181,25 @@ const ciclo = (it, n, t) => { const d = it.base.info[n].dur; return ((t % d) + d
 const tope = (it, n, t) => Math.max(0, Math.min(it.base.info[n].dur - 0.001, t));
 const lerp3 = (a, b, k) => a + (b - a) * Math.max(0, Math.min(1, k));
 
-// Instante de una animación de golpe según los frames del golpe en el juego
+// Instante de una animación de golpe según los frames del golpe en el juego.
+// La preparación se acelera solo lo justo para llegar al impacto a tiempo (como mucho x2) y,
+// desde el impacto, la animación sigue casi a velocidad real: así no se ve robótico.
 function tiempoGolpe(it, nombre, m, t) {
-  const inf = it.base.info[nombre], imp = inf.impacto;
-  const t0 = Math.max(0, imp - 0.42), t1 = Math.min(inf.dur, imp + 0.6);
-  const su = m.startup || 6, ac = m.active || 6, rc = m.recovery || 14;
-  if (t < su) return lerp3(t0, imp, t / su);
-  if (m.air || m.kind === 'dash') return imp + Math.min(0.06, (t - su) * 0.01);
-  if (t < su + ac) return imp + (t - su) / ac * 0.06;
-  return lerp3(imp + 0.06, t1, (t - su - ac) / rc);
+  const inf = it.base.info[nombre], imp = inf.impacto, fin = inf.dur - 0.001;
+  const su = (m.startup || 6) / 60, s = t / 60;
+  const prep = Math.min(imp, Math.max(0.12, su * VEL_MAX_PREP));
+  if (s < su) return imp - prep + prep * (s / su);
+  if (m.air || m.kind === 'dash') return Math.min(fin, imp + (s - su) * 0.25);   // mantiene el golpe extendido
+  return Math.min(fin, imp + (s - su) * VEL_GOLPE);
+}
+
+// Avanza una animación de desplazamiento al ritmo real del luchador (sin que los pies patinen)
+function andar(it, n, f) {
+  const inf = it.base.info[n], v = Math.abs(f.vx) * 60 / PPM;                 // m/s en el juego
+  const escala = it.root.scale.x || 1;
+  const ritmo = inf.paso > 0.05 ? v / (inf.paso * escala) : 1.1;
+  it.fase[n] = ((it.fase[n] || 0) + it.dtf / 60 * Math.min(2.6, Math.max(0.6, ritmo))) % inf.dur;
+  return it.fase[n];
 }
 
 // Qué animación (o combinación) mostrar para un luchador. Devuelve [[nombre, segundos], ...]
@@ -177,12 +209,13 @@ function elegir(f, it) {
     case 'idle': case 'recover': case 'intro': return [['guardia', ciclo(it, 'guardia', reloj)]];
     case 'walk': {
       const n = f.vx * f.facing >= 0 ? 'caminar_adelante' : 'caminar_atras';
-      return [[n, ciclo(it, n, reloj * 1.15)]];
+      return [[n, andar(it, n, f)]];
     }
-    case 'run': return [['correr', ciclo(it, 'correr', reloj)]];
+    case 'run': return [['correr', andar(it, 'correr', f)]];
     case 'crouch': return [['saltar:inf', T_CUCLILLAS], ['guardia:sup', ciclo(it, 'guardia', reloj)]];
-    case 'cblock': return [['saltar:inf', T_CUCLILLAS], ['bloqueo:sup', T_BLOQUEO]];
-    case 'block': return [['bloqueo', T_BLOQUEO]];
+    // en guardia alta o baja se respira un poco (no queda congelado)
+    case 'cblock': return [['saltar:inf', T_CUCLILLAS], ['bloqueo:sup', T_BLOQUEO + Math.sin(reloj * 2.2) * 0.12]];
+    case 'block': return [['bloqueo', T_BLOQUEO + Math.sin(reloj * 2.2) * 0.12]];
     case 'prejump': return [['saltar', Math.min(0.43, 0.15 + el * 2)]];
     case 'jump': return [['saltar', lerp3(0.6, 1.1, (f.vy + 16.5) / 33)]];
     case 'land': return [['saltar', tope(it, 'saltar', 1.3 + el * 1.5)]];
@@ -220,16 +253,19 @@ function elegir(f, it) {
   return [['guardia', ciclo(it, 'guardia', reloj)]];
 }
 
-// Aplica la animación elegida, con una transición suave desde la anterior
-function aplicar(it, spec) {
+// Aplica la animación elegida, con una transición suave (acelera y frena) desde la anterior
+function aplicar(it, spec, fade = FADE.normal) {
   const clave = spec.map(s => s[0]).join('+');
   if (clave !== it.clave) {
-    it.previa = it.actual;
+    // si la transición anterior iba por la mitad, se parte de la pose de origen para no dar saltos
+    if (it.mezcla >= 0.5 || !it.previa) it.previa = it.actual;
     it.mezcla = 0;
     it.clave = clave;
+    it.fade = fade;
   }
   it.actual = spec;
-  it.mezcla = Math.min(1, it.mezcla + 1 / FADE);
+  it.mezcla = Math.min(1, it.mezcla + it.dtf / it.fade);
+  const w = it.mezcla * it.mezcla * (3 - 2 * it.mezcla);
   for (const a of Object.values(it.acciones)) a.enabled = false;
   const pesos = new Map();
   const poner = (lista, w) => {
@@ -242,8 +278,8 @@ function aplicar(it, spec) {
       pesos.set(a, p);
     }
   };
-  poner(it.mezcla < 1 ? it.previa : null, 1 - it.mezcla);
-  poner(spec, it.mezcla);
+  poner(w < 1 ? it.previa : null, 1 - w);
+  poner(spec, w);
   for (const [a, p] of pesos) { a.enabled = true; a.setEffectiveWeight(p.w); a.time = p.t; }
   it.mixer.update(0);
   // que la cadera no suba en las animaciones de caída (la altura la pone el juego)
@@ -466,17 +502,28 @@ const R3D = {
   // Luchador en combate
   drawFighter(ctx, f, camX, o = {}) {
     const it = instancia('f' + f.idx + ':' + f.ch.id, f.ch.id);
+    // frames de juego desde el último dibujo (las transiciones van al ritmo del juego, no de la pantalla)
+    it.dtf = it.ultT == null ? 1 : Math.max(0, Math.min(4, f.t - it.ultT));
+    it.ultT = f.t;
     const atk = f.state === 'attack' ? f.attackId : -1;
+    let fade = FADE.normal;
     if (f.state !== it.estado || atk !== it.ataque) {
       it.desdeSuelo = f.state === 'dead' && (it.estado === 'launched' || it.estado === 'down');
+      if (GOLPEADO.has(f.state)) fade = FADE.golpe;
+      else if (f.state === 'attack') fade = FADE.ataque;
+      else if (it.estado === 'attack' || it.estado === 'block' || it.estado === 'land') fade = FADE.guardia;
       it.estado = f.state; it.ataque = atk; it.t0 = f.t;
     }
     const b = f.bulk * f.fxScale;
     it.root.scale.setScalar(b * it.base.escala);
-    it.root.rotation.set(0, f.facing * GIRO + (f.spinT || 0), 0);
+    // al cambiar de lado se gira poco a poco en vez de dar la vuelta de golpe
+    const objetivo = f.facing * GIRO;
+    if (it.giro == null) it.giro = objetivo;
+    it.giro += (objetivo - it.giro) * (1 - Math.pow(0.72, it.dtf));
+    it.root.rotation.set(0, it.giro + (f.spinT || 0), 0);
     if (it.huesos.Head) it.huesos.Head.scale.setScalar(o.headless ? 0.001 : 1);
     pintar(it, o);
-    aplicar(it, elegir(f, it));
+    aplicar(it, elegir(f, it), fade);
     const rot = (f.state === 'held' && f.heldMode !== 'drain') || (f.state === 'jump' && f.flipping)
       ? f.pose.rot * Math.PI / 180 * f.facing : 0;
     const punto = dibujar(ctx, it, Math.round(f.x - camX), f.y, 1, rot);
@@ -494,6 +541,8 @@ const R3D = {
     const anim = o.anim3d || 'guardia';
     const it = instancia('v' + (o.slot || '') + ':' + ch.id + ':' + escala, ch.id);
     const ahora = performance.now() / 1000;
+    it.dtf = it.ultT == null ? 1 : Math.max(0, Math.min(4, (ahora - it.ultT) * 60));
+    it.ultT = ahora;
     if (it.estado !== anim) { it.estado = anim; it.t0 = ahora; }
     const el = ahora - it.t0;
     it.root.scale.setScalar((ch.look.bulk || 1) * it.base.escala);

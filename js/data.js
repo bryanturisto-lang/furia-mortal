@@ -33,7 +33,7 @@ const CHARACTERS = [
     specials: [
       { name: 'Proyectil de Hielo', input: ['D', 'F'], btn: 'lp', kind: 'proj', proj: 'hielo', ai: 'far' },
       { name: 'Pared de Hielo', input: ['D', 'D'], btn: 'hp', kind: 'proj', proj: 'pared', ai: 'mid' },
-      { name: 'Deslizamiento de Hielo', input: ['B', 'F'], btn: 'lk', kind: 'dash', dash: 'slide', trail: '#9fe0ff', ai: 'mid' },
+      { name: 'Deslizamiento de Hielo', input: ['B', 'F'], btn: 'lk', kind: 'dash', dash: 'slide', trail: '#9fe0ff', fx: 'ice', ai: 'mid' },
       { name: 'Tormenta de Hielo', input: ['D', 'B', 'F'], btn: 'hk', kind: 'ultra', proj: 'tormenta', ai: 'ultra' },
     ],
     fatal: { input: ['F', 'F'], btn: 'lk', fx: 'ice' } },

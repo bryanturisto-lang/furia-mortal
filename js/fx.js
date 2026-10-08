@@ -29,6 +29,25 @@ class FX {
       kind: 'smoke', dark });
   }
 
+  // Hielo realista: vaho frío, destellos y esquirlas de cristal que rebotan en el suelo
+  frost(x, y, size = 16, vy = -0.5) {
+    this.add({ x, y, vx: rand(-0.6, 0.6), vy: vy * rand(0.6, 1.4), g: -0.004, life: rand(30, 55), size: size * rand(0.8, 1.3), kind: 'frost' });
+  }
+
+  glint(x, y, size = 6) {
+    this.add({ x, y, vx: rand(-0.3, 0.3), vy: rand(-0.6, 0.1), g: 0, life: rand(12, 24), size: size * rand(0.6, 1.2), kind: 'glint', rot: rand(0, 1) });
+  }
+
+  shatter(x, y, n = 30, speed = 9, spread = 60) {
+    for (let i = 0; i < n; i++) {
+      const a = rand(-Math.PI, 0), s = rand(2, speed);
+      this.add({ x: x + rand(-spread, spread) * 0.4, y: y + rand(-spread, spread) * 0.6, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 2,
+        g: 0.42, life: rand(40, 90), size: rand(5, 15), kind: 'shard', rot: rand(0, 6), vr: rand(-0.35, 0.35) });
+    }
+    for (let i = 0; i < 10; i++) this.frost(x + rand(-40, 40), y + rand(-50, 30), 26, -0.8);
+    for (let i = 0; i < 8; i++) this.glint(x + rand(-50, 50), y + rand(-60, 40), 9);
+  }
+
   // ceniza que flota y cae despacio
   ash(x, y, n) {
     for (let i = 0; i < n; i++) {
@@ -93,6 +112,12 @@ class FX {
       if (p.kind === 'puff') p.size *= 1.02;
       else if (p.kind === 'smoke') { p.size *= 1.018; p.vx *= 0.98; }
       else if (p.kind === 'flame') { p.size *= 0.975; p.vx *= 0.96; }
+      else if (p.kind === 'frost') { p.size *= 1.015; p.vx *= 0.97; }
+      else if (p.kind === 'shard' && p.y >= GROUND_Y + 4) {
+        // la esquirla rebota y se queda brillando en el suelo
+        p.y = GROUND_Y + 4; p.vy *= -0.25; p.vx *= 0.5; p.vr *= 0.4;
+        if (Math.abs(p.vy) < 0.8) { p.vy = 0; p.g = 0; p.vx *= 0.8; }
+      }
       else if (p.kind === 'ash') { p.vx = p.vx * 0.97 + Math.sin(p.life * 0.15) * 0.06; if (p.y > GROUND_Y + 4) { p.y = GROUND_Y + 4; p.vy = 0; p.vx = 0; p.g = 0; } }
       if (p.kind === 'blood' && p.y >= GROUND_Y + 4) {
         if (this.splats.length < 160) this.splats.push({ x: p.x, y: GROUND_Y + rand(0, 12), w: rand(4, 12) });
@@ -180,6 +205,34 @@ class FX {
           ctx.globalAlpha = 1;
           break;
         }
+        case 'frost': {
+          // vaho helado: nube blanca-azulada muy suave
+          const age = 1 - p.life / p.max;
+          ctx.globalAlpha = Math.max(0, Math.min(age * 5, 1 - age)) * 0.55;
+          ctx.drawImage(ICE_SPRITES().frost, x - p.size, p.y - p.size, p.size * 2, p.size * 2);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'glint': {
+          // destello de cuatro puntas que titila
+          const k = Math.sin((1 - p.life / p.max) * Math.PI), s = p.size * k;
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalAlpha = k;
+          ctx.save(); ctx.translate(x, p.y); ctx.rotate(p.rot);
+          ctx.drawImage(ICE_SPRITES().glint, -s * 2, -s * 2, s * 4, s * 4);
+          ctx.restore();
+          ctx.globalAlpha = 1;
+          ctx.globalCompositeOperation = 'source-over';
+          break;
+        }
+        case 'shard': {
+          ctx.globalAlpha = Math.max(0, Math.min(1, p.life / 25));
+          ctx.save(); ctx.translate(x, p.y); ctx.rotate(p.rot);
+          ctx.drawImage(ICE_SPRITES().crystal, -p.size * 0.3, -p.size, p.size * 0.6, p.size * 2);
+          ctx.restore();
+          ctx.globalAlpha = 1;
+          break;
+        }
         case 'ash':
           ctx.globalAlpha = Math.max(0, Math.min(1, p.life / 40));
           ctx.fillStyle = p.hot && p.life > p.max * 0.5 ? '#ff9a40' : '#5a524c';
@@ -213,6 +266,90 @@ function FLAME_SPRITES() {
     mk([[0, 'rgba(40,34,32,0.9)'], [0.55, 'rgba(30,26,26,0.45)'], [1, 'rgba(20,18,18,0)']]),
   ];
   return _flameSprites;
+}
+
+// Texturas del hielo: cristal facetado translúcido, vaho y destello (se crean una sola vez)
+let _iceSprites = null;
+function ICE_SPRITES() {
+  if (_iceSprites) return _iceSprites;
+  const mk = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); return c; };
+  const crystal = mk(48, 160, (x, w, h) => {
+    // prisma alargado: cara izquierda clara, derecha más oscura, arista central brillante
+    const pts = [[w / 2, 2], [w - 6, h * 0.22], [w - 8, h - 6], [w / 2, h - 2], [8, h - 6], [6, h * 0.22]];
+    x.shadowColor = 'rgba(140,220,255,0.9)'; x.shadowBlur = 10;
+    x.beginPath(); pts.forEach(([a, b], i) => (i ? x.lineTo(a, b) : x.moveTo(a, b))); x.closePath();
+    let g = x.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, 'rgba(225,248,255,0.92)'); g.addColorStop(0.5, 'rgba(160,220,250,0.78)'); g.addColorStop(1, 'rgba(70,140,210,0.85)');
+    x.fillStyle = g; x.fill();
+    x.shadowBlur = 0;
+    g = x.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(255,255,255,0.55)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(20,70,140,0.35)');
+    x.fillStyle = g; x.fill();
+    x.strokeStyle = 'rgba(255,255,255,0.9)'; x.lineWidth = 2;
+    x.beginPath(); x.moveTo(w / 2, 4); x.lineTo(w / 2 - 1, h - 6); x.stroke();
+    x.strokeStyle = 'rgba(255,255,255,0.5)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(w / 2, 4); x.lineTo(10, h * 0.24); x.moveTo(w / 2, 4); x.lineTo(w - 10, h * 0.24); x.stroke();
+  });
+  const frost = mk(64, 64, (x) => {
+    const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(235,248,255,0.9)'); g.addColorStop(0.5, 'rgba(190,225,250,0.4)'); g.addColorStop(1, 'rgba(160,210,250,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64);
+  });
+  const glint = mk(64, 64, (x) => {
+    x.translate(32, 32);
+    // cuatro rayos largos en cruz y cuatro cortos en diagonal
+    for (const [len, wd, off] of [[30, 3, 0], [14, 2, Math.PI / 4]]) {
+      for (let k = 0; k < 4; k++) {
+        x.save();
+        x.rotate(off + k * Math.PI / 2);
+        const g = x.createLinearGradient(0, 0, len, 0);
+        g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(160,220,255,0)');
+        x.fillStyle = g; x.beginPath(); x.moveTo(0, -wd); x.lineTo(len, 0); x.lineTo(0, wd); x.closePath(); x.fill();
+        x.restore();
+      }
+    }
+    const g = x.createRadialGradient(0, 0, 0, 0, 0, 10);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(180,230,255,0)');
+    x.fillStyle = g; x.fillRect(-10, -10, 20, 20);
+  });
+  _iceSprites = { crystal, frost, glint };
+  return _iceSprites;
+}
+
+// Cristal de hielo dibujado desde su base (bx, by), con altura h, ancho w y ángulo ang
+function drawCrystal(ctx, bx, by, w, h, ang = 0, alpha = 1) {
+  if (h <= 1) return;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.translate(bx, by);
+  ctx.rotate(ang);
+  ctx.drawImage(ICE_SPRITES().crystal, -w / 2, -h, w, h);
+  ctx.restore();
+}
+
+// Bloque de hielo que envuelve a un luchador congelado
+function drawIceBlock(ctx, x, y, h, t, seed) {
+  ctx.save();
+  // escarcha translúcida sobre el cuerpo
+  const g = ctx.createLinearGradient(0, y - h, 0, y);
+  g.addColorStop(0, 'rgba(200,235,255,0.18)');
+  g.addColorStop(1, 'rgba(150,210,250,0.32)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(x - 40, y); ctx.lineTo(x - 46, y - h * 0.55); ctx.lineTo(x - 30, y - h - 8);
+  ctx.lineTo(x + 28, y - h - 4); ctx.lineTo(x + 46, y - h * 0.5); ctx.lineTo(x + 40, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(235,250,255,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // cristales que brotan alrededor
+  for (let i = 0; i < 9; i++) {
+    const r = Math.sin(seed * 13.7 + i * 7.1) * 0.5 + 0.5, r2 = Math.sin(seed * 3.3 + i * 4.9) * 0.5 + 0.5;
+    const bx = x - 44 + i * 11, hh = 26 + r * 50 + (i === 4 ? 30 : 0);
+    drawCrystal(ctx, bx, y + 2, 10 + r2 * 8, hh, (i - 4) * 0.12 + (r - 0.5) * 0.3, 0.9);
+  }
+  ctx.restore();
 }
 
 function drawSkeleton(ctx, x, y, dir, burnt) {

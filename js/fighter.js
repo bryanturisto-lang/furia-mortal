@@ -695,6 +695,8 @@ class Fighter {
 
     if (this.frozen > 0) {
       this.frozen--;
+      // al descongelarse, el hielo revienta en esquirlas
+      if (this.frozen === 0 && !this.gone) game.fx.shatter(this.x, this.y - 90 * this.bulk, 22, 6, 40);
       this.vx *= 0.85;
       this.physics(game);
       this.updateExtras();
@@ -937,6 +939,13 @@ class Fighter {
     if (t >= m.startup && t < end) {
       if (this.hasHit && !m.multi) { this.endDash(); return; }
       this.vx = this.facing * m.speed;
+      if (m.sp && m.sp.fx === 'ice') {
+        // deslizamiento sobre una franja de hielo: escarcha, esquirlas y destellos
+        game.fx.frost(this.x - this.facing * rand(10, 50), GROUND_Y - rand(0, 20), 18, -0.3);
+        if (t % 2 === 0) game.fx.glint(this.x - this.facing * rand(0, 60), GROUND_Y - rand(5, 40), 7);
+        if (t % 3 === 0) game.fx.add({ x: this.x, y: GROUND_Y - 6, vx: -this.facing * rand(1, 3), vy: rand(-4, -1), g: 0.4, life: 50,
+          size: rand(3, 7), kind: 'shard', rot: rand(0, 6), vr: rand(-0.3, 0.3) });
+      }
       if (m.fire) {
         // estela de llamas detrás del puño
         for (let i = 0; i < 3; i++) game.fx.flame(this.x - this.facing * rand(0, 50), this.y - rand(90, 150), 13, -1.2, 1.6);
@@ -1410,6 +1419,8 @@ class Fighter {
     if (melting) ctx.restore();
     if (this.chains && !melting) this.drawChain(ctx, camX, 0);
     ctx.globalAlpha = 1;
+    // congelado: encerrado en un bloque de hielo
+    if (this.frozen > 0 && !this.headless) drawIceBlock(ctx, this.x - camX, this.y, 190 * this.bulk, this.t, this.idx + 1);
 
     // red de captura
     if (this.netted > 0) {

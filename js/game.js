@@ -450,7 +450,12 @@ const Game = {
       else if (F.tint) l.tint = st % 8 < 4 ? F.tint : null;
       if (mode === 'melt') l.melt = p * 0.9;
       if (mode === 'implode') l.fxScale = Math.max(0.1, 1 - p) * (1 + Math.sin(st * 0.8) * 0.06);
-      if (mode !== 'decap' && mode !== 'cadenas') {
+      if (mode === 'shatter') {
+        // el hielo lo va cubriendo: vaho frío y destellos
+        this.fx.frost(l.x + rand(-30, 30), l.y - rand(10, 180), 18, -0.4);
+        if (st % 3 === 0) this.fx.glint(l.x + rand(-35, 35), l.y - rand(10, 190), 9);
+        if (st % 10 === 0) Sound.special('freeze');
+      } else if (mode !== 'decap' && mode !== 'cadenas') {
         for (let i = 0; i < (mode === 'burn' ? 5 : 3); i++) {
           this.fx.add({ x: l.x + rand(-28, 28), y: l.y - rand(10, 175) * (1 - l.melt), vx: rand(-1, 1),
             vy: mode === 'burn' ? rand(-4, -1.5) : rand(-3, -0.5), g: mode === 'melt' ? 0.2 : -0.02,
@@ -553,10 +558,17 @@ const Game = {
         Sound.special('sombra');
         break;
       case 'shatter':
+        // el cuerpo congelado estalla en cientos de esquirlas de hielo con trozos rojos congelados
         l.gone = true;
-        this.fx.gibs(cx, cy, ['#e8f8ff', '#a8e6ff', '#7ac8f0', '#ffffff']);
-        this.fx.burst(cx, cy, '#e8f8ff', 50, 10);
+        this.fx.shatter(cx, cy, 80, 12, 90);
+        this.fx.shatter(cx, cy - 50, 30, 8, 40);
+        for (let i = 0; i < 12; i++) {
+          this.fx.add({ x: cx + rand(-30, 30), y: cy + rand(-60, 60), vx: rand(-7, 7), vy: rand(-12, -3), g: 0.5, life: 420,
+            size: rand(5, 10), color: chance(0.5) ? '#7a1a24' : '#a8c8e0', kind: 'gib', rot: rand(0, 6), vr: rand(-0.3, 0.3) });
+        }
+        for (let i = 0; i < 16; i++) this.fx.frost(cx + rand(-60, 60), cy + rand(-80, 80), 34, -0.6);
         Sound.explode();
+        Sound.special('freeze');
         break;
       case 'melt':
         l.gone = true;
@@ -758,16 +770,28 @@ const Game = {
         this.fx.add({ x: p.x + rand(-20, 20), y: p.y + rand(-50, 50), vx: p.vx * 0.3, vy: rand(-2, -0.5), g: 0,
           life: 14, size: rand(2, 4), color: '#ffffff', kind: 'glow' });
         break;
+      case 'ice':
+        // estela de vaho helado, destellos y alguna esquirla que cae
+        this.fx.frost(p.x - p.dir * rand(20, 50), p.y + rand(-8, 8), 12, -0.2);
+        if (p.t % 2 === 0) this.fx.glint(p.x - p.dir * rand(0, 60), p.y + rand(-14, 14), 6);
+        if (p.t % 5 === 0) this.fx.add({ x: p.x - p.dir * 30, y: p.y, vx: -p.dir * rand(0.5, 2), vy: rand(-1, 1), g: 0.3, life: 40,
+          size: rand(3, 6), kind: 'shard', rot: rand(0, 6), vr: rand(-0.3, 0.3) });
+        break;
       case 'icewall':
-        if (p.t % 3 === 0) this.fx.add({ x: p.x + rand(-30, 30), y: GROUND_Y - rand(0, 180), vx: rand(-0.5, 0.5), vy: rand(-1, 0.3),
-          g: 0, life: 18, size: rand(1.5, 3), color: '#e8fbff', kind: 'glow' });
+        // vaho frío a ras de suelo y destellos sobre los cristales
+        if (p.t < 8) for (let i = 0; i < 3; i++) this.fx.frost(p.x + rand(-50, 50), GROUND_Y - rand(0, 20), 22, -0.4);
+        if (p.t % 3 === 0) this.fx.glint(p.x + rand(-30, 30), GROUND_Y - rand(20, 180), 8);
+        if (p.t === (p.spec.life || 50) - 6) this.fx.shatter(p.x, GROUND_Y - 80, 26, 7, 50);   // se rompe al desaparecer
         break;
       case 'storm':
+        // remolino de vaho y nieve alrededor del rival
         for (let i = 0; i < 3; i++) {
-          const a = rand(0, Math.PI * 2), r = rand(30, 80);
-          this.fx.add({ x: p.x + Math.cos(a) * r, y: p.y + rand(-110, 110), vx: -Math.sin(a) * 4, vy: rand(-2, 0), g: 0,
-            life: rand(10, 20), size: rand(2, 4), color: chance(0.5) ? '#ffffff' : '#9fe0ff', kind: 'glow' });
+          const a = p.t * 0.3 + i * 2.1, r = rand(40, 90);
+          this.fx.frost(p.x + Math.cos(a) * r, GROUND_Y - rand(10, 240), 26, -1.2);
+          this.fx.add({ x: p.x + Math.cos(a) * r, y: GROUND_Y - rand(0, 250), vx: -Math.sin(a) * 4, vy: rand(-2, 0), g: 0,
+            life: rand(14, 24), size: rand(1.2, 2.4), color: '#ffffff', kind: 'glow' });
         }
+        if (p.t % 2 === 0) this.fx.glint(p.x + rand(-60, 60), GROUND_Y - rand(20, 240), 9);
         break;
       default:
         this.fx.trail(p.x - p.vx, p.y, sp.color);
@@ -781,7 +805,8 @@ const Game = {
     const res = opp.takeHit(m, dir, this);
     if (res === 'none') return;
     this.impact(res, x, y, dir, m, opp);
-    this.fx.burst(x, y, sp.color, 22);
+    if (sp.style === 'ice') this.fx.shatter(x, y, 16, 6, 24);   // el cristal estalla al chocar
+    else this.fx.burst(x, y, sp.color, 22);
     if (res === 'hit') {
       const before = this.hooks.length;
       this.applyEffect(p.owner, opp, sp.effect);
@@ -1048,48 +1073,51 @@ const Game = {
           break;
         }
         case 'ice': {
-          // lanza de cristal de hielo
-          ctx.fillStyle = 'rgba(120,200,255,0.35)';
-          poly(ctx, [x + d * 30, y, x - d * 4, y - 13, x - d * 46, y, x - d * 4, y + 13]);
-          ctx.fillStyle = '#dff6ff';
-          poly(ctx, [x + d * 26, y, x + d * 2, y - 8, x - d * 22, y, x + d * 2, y + 8]);
-          ctx.fillStyle = '#ffffff';
-          poly(ctx, [x + d * 22, y - 1, x + d * 4, y - 4, x - d * 10, y - 1, x + d * 4, y + 1]);
-          ctx.fillStyle = '#9fe0ff';
-          poly(ctx, [x - d * 18, y, x - d * 30, y - 9, x - d * 26, y]);
-          poly(ctx, [x - d * 18, y, x - d * 30, y + 9, x - d * 26, y]);
+          // lanza de cristal de hielo: un cristal grande y dos menores, con halo frío
+          ctx.shadowBlur = 0;
+          const halo = ctx.createRadialGradient(x, y, 4, x, y, 50);
+          halo.addColorStop(0, 'rgba(190,235,255,0.35)');
+          halo.addColorStop(1, 'rgba(120,200,255,0)');
+          ctx.fillStyle = halo;
+          ctx.fillRect(x - 50, y - 50, 100, 100);
+          const ang = d > 0 ? Math.PI / 2 : -Math.PI / 2, wob = Math.sin(p.t * 0.6) * 0.03;
+          drawCrystal(ctx, x - d * 40, y, 22, 76, ang + wob);
+          drawCrystal(ctx, x - d * 34, y - 7, 12, 44, ang - 0.25 * d);
+          drawCrystal(ctx, x - d * 34, y + 7, 12, 44, ang + 0.25 * d);
           break;
         }
         case 'icewall': {
-          // cristales que brotan del suelo
-          const grow = Math.min(1, p.t / 6), fade = Math.min(1, (p.spec.life - p.t) / 10);
-          ctx.globalAlpha = Math.max(0, fade);
-          const shards = [[-30, 0.55], [-18, 0.85], [-6, 1], [6, 0.9], [18, 0.7], [30, 0.5], [-24, 0.35], [24, 0.4]];
-          for (const [ox, hgt] of shards) {
-            const top = GROUND_Y - 190 * hgt * grow, bx = x + ox * d;
-            ctx.fillStyle = 'rgba(150,215,255,0.75)';
-            poly(ctx, [bx - 11, GROUND_Y, bx - 2, top, bx + 11, GROUND_Y]);
-            ctx.fillStyle = 'rgba(240,252,255,0.8)';
-            poly(ctx, [bx - 3, GROUND_Y, bx - 2, top + 8, bx + 3, GROUND_Y]);
-          }
+          // cristales facetados que brotan del suelo, uno tras otro, inclinados hacia el rival
+          ctx.shadowBlur = 0;
+          const fade = Math.max(0, Math.min(1, (p.spec.life - p.t) / 8));
+          ctx.globalAlpha = fade;
+          const shards = [[-34, 0.45, -0.35, 26], [-24, 0.7, -0.22, 30], [-12, 0.92, -0.1, 34], [0, 1, 0.02, 40],
+            [12, 0.85, 0.14, 34], [24, 0.62, 0.26, 28], [34, 0.4, 0.38, 24], [-6, 0.55, -0.05, 22], [8, 0.5, 0.2, 20]];
+          shards.forEach(([ox, hgt, ang, wd], i) => {
+            const grow = Math.min(1, Math.max(0, (p.t - i * 0.6) / 5));
+            const g = 1 - Math.pow(1 - grow, 3);   // crece rápido y frena
+            drawCrystal(ctx, x + ox * d, GROUND_Y + 4, wd, 200 * hgt * g, ang * d);
+          });
           ctx.globalAlpha = 1;
           break;
         }
         case 'storm': {
-          // tornado de hielo
-          const fade = Math.min(1, p.t / 6, (p.spec.life - p.t) / 8);
-          ctx.globalAlpha = Math.max(0, fade);
-          ctx.strokeStyle = 'rgba(200,240,255,0.7)';
-          for (let i = 0; i < 6; i++) {
-            const yy = GROUND_Y - 20 - i * 40, r = 30 + i * 12, a0 = p.t * 0.35 + i;
-            ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.ellipse(x, yy, r, r * 0.3, 0, a0, a0 + 4.2); ctx.stroke();
-          }
-          for (let i = 0; i < 10; i++) {
-            const a = p.t * 0.3 + i * 0.63, r = 40 + (i % 3) * 22, yy = GROUND_Y - 30 - (i * 23) % 220;
-            const sx = x + Math.cos(a) * r, ss = 6 + (i % 3) * 3;
-            ctx.fillStyle = i % 2 ? '#ffffff' : '#9fe0ff';
-            poly(ctx, [sx, yy - ss, sx + ss * 0.5, yy, sx, yy + ss, sx - ss * 0.5, yy]);
+          // tornado de hielo: resplandor frío y cristales que giran alrededor del rival (el vaho son partículas)
+          ctx.shadowBlur = 0;
+          const fade = Math.max(0, Math.min(1, p.t / 6, (p.spec.life - p.t) / 8));
+          ctx.globalAlpha = fade;
+          const g = ctx.createRadialGradient(x, GROUND_Y - 120, 10, x, GROUND_Y - 120, 170);
+          g.addColorStop(0, 'rgba(200,240,255,0.28)');
+          g.addColorStop(1, 'rgba(120,190,255,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(x - 170, GROUND_Y - 290, 340, 300);
+          for (let i = 0; i < 16; i++) {
+            const a = p.t * (0.22 + (i % 3) * 0.05) + i * 0.39, yy = GROUND_Y - 20 - (i * 37) % 240;
+            const r = 36 + (yy < GROUND_Y - 150 ? 30 : 0) + (i % 4) * 10;
+            const delante = Math.sin(a) > 0;   // los de detrás, más pequeños y tenues
+            ctx.globalAlpha = fade * (delante ? 1 : 0.5);
+            const s = (delante ? 1 : 0.7) * (10 + (i % 3) * 5);
+            drawCrystal(ctx, x + Math.cos(a) * r, yy, s * 0.6, s * 2, a * 1.7);
           }
           ctx.globalAlpha = 1;
           break;
