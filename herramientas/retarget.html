@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Prueba de animaciones compartidas · Furia Mortal</title>
+  <style>body { margin: 0; background: #20242c; }</style>
+</head>
+<body>
+  <script type="importmap">
+    { "imports": { "three": "../js/vendor/three/three.module.min.js", "three/addons/": "../js/vendor/three/addons/" } }
+  </script>
+  <script type="module">
+    // Herramienta de desarrollo: compara un personaje con sus propias animaciones y con las de otro
+    // (mismo esqueleto de Meshy). comparar({ modelo, donante, clips, cols, guardar })
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    const CW = 150, CH = 190;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(CW, CH);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#20242c');
+    scene.add(new THREE.HemisphereLight('#ffffff', '#404050', 2.4));
+    const sun = new THREE.DirectionalLight('#ffffff', 2);
+    sun.position.set(2, 4, 3);
+    scene.add(sun);
+    const cam = new THREE.OrthographicCamera(-1.05, 1.05, 1.45, -1.2, 0.1, 20);
+    const r = THREE.MathUtils.degToRad(70);
+    cam.position.set(Math.sin(r) * 6, 0.9, Math.cos(r) * 6);
+    cam.lookAt(0, 0.9, 0);
+
+    // adapta un clip de otro personaje: rotaciones tal cual, posición de la cadera escalada
+    window.adaptar = (clip, hipsDonante, hipsDestino) => {
+      const c = clip.clone(), k = hipsDestino.position.y / hipsDonante.position.y;
+      for (const t of c.tracks) {
+        if (t.name === 'Hips.position') {
+          const v = t.values;
+          for (let i = 0; i < v.length; i += 3) {
+            v[i] = hipsDestino.position.x + (v[i] - hipsDonante.position.x) * k;
+            v[i + 1] *= k;
+            v[i + 2] = hipsDestino.position.z + (v[i + 2] - hipsDonante.position.z) * k;
+          }
+        }
+      }
+      return c;
+    };
+
+    window.comparar = async ({ modelo, donante, clips, cols = 6, guardar }) => {
+      const loader = new GLTFLoader();
+      const [a, b] = await Promise.all([loader.loadAsync(modelo), loader.loadAsync(donante)]);
+      const hips = s => { let h = null; s.traverse(o => { if (o.isBone && o.name === 'Hips') h = h || o; }); return h; };
+      const ha = hips(a.scene), hb = hips(b.scene);
+      const m = a.scene;
+      scene.add(m);
+      const mixer = new THREE.AnimationMixer(m);
+      const out = document.createElement('canvas');
+      out.width = CW * cols; out.height = CH * clips.length * 2;
+      const ctx = out.getContext('2d');
+      ctx.font = '12px sans-serif';
+      let fila = 0;
+      for (const nombre of clips) {
+        for (const [etq, clip] of [['propia', a.animations.find(x => x.name === nombre)],
+          ['donada', adaptar(b.animations.find(x => x.name === nombre), hb, ha)]]) {
+          mixer.stopAllAction();
+          const act = mixer.clipAction(clip);
+          act.play();
+          for (let c = 0; c < cols; c++) {
+            act.time = Math.min(clip.duration * c / (cols - 1), clip.duration - 0.001);
+            mixer.update(0);
+            renderer.render(scene, cam);
+            ctx.drawImage(renderer.domElement, c * CW, fila * CH);
+          }
+          ctx.fillStyle = '#ffd060';
+          ctx.fillText(nombre + ' · ' + etq, 4, fila * CH + 14);
+          mixer.uncacheClip(clip);
+          fila++;
+        }
+      }
+      document.body.appendChild(out);
+      if (guardar) await fetch('http://127.0.0.1:8099/' + guardar, { method: 'POST', body: out.toDataURL('image/jpeg', 0.85) });
+      return fila;
+    };
+    window.listo = true;
+  </script>
+</body>
+</html>

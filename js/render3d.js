@@ -11,6 +11,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 const MODELOS = {
   kaizen: { url: 'modelos/kaizen.glb', contraluz: '#ff9a50' },   // contraluz: color del brillo por detrás
   glaciar: { url: 'modelos/glaciar.glb', contraluz: '#8cc8ff' },
+  // anims: usa las animaciones de otro personaje (mismo esqueleto de Meshy); el archivo solo trae el modelo
+  veneno: { url: 'modelos/veneno.glb', contraluz: '#a8ff60', anims: 'kaizen' },
 };
 
 const PPM = 104;                               // píxeles del juego por metro (1,8 m ≈ 187 px, como el dibujo 2D)
@@ -142,10 +144,34 @@ function analizar(base) {
   root.traverse(o => { if (o.isSkinnedMesh) o.skeleton.pose(); });
 }
 
-async function cargar(id, { url, contraluz }) {
+// Adapta un clip de otro personaje: las rotaciones sirven tal cual (mismo esqueleto) y el movimiento
+// de la cadera se escala según la altura de cadera de cada uno
+function adaptarClip(clip, hipsDonante, hipsDestino) {
+  const c = clip.clone(), k = hipsDestino.y / hipsDonante.y;
+  for (const t of c.tracks) {
+    if (t.name !== 'Hips.position') continue;
+    const v = t.values;
+    for (let i = 0; i < v.length; i += 3) {
+      v[i] = hipsDestino.x + (v[i] - hipsDonante.x) * k;
+      v[i + 1] *= k;
+      v[i + 2] = hipsDestino.z + (v[i + 2] - hipsDonante.z) * k;
+    }
+  }
+  return c;
+}
+
+const cargas = {};
+async function cargar(id, { url, contraluz, anims }) {
   const g = await loader.loadAsync(url);
+  let hipsRest = null;
+  g.scene.traverse(o => { if (o.isBone && o.name === 'Hips' && !hipsRest) hipsRest = o.position.clone(); });
+  let animaciones = g.animations;
+  if (anims) {
+    const donante = await cargas[anims];
+    animaciones = donante.originales.map(c => adaptarClip(c, donante.hipsRest, hipsRest));
+  }
   const clips = {};
-  for (const c of g.animations) {
+  for (const c of animaciones) {
     clips[c.name] = c;
     // versiones parciales para combinar: piernas de una animación + brazos de otra
     const inf = c.clone(), sup = c.clone();
@@ -161,10 +187,12 @@ async function cargar(id, { url, contraluz }) {
       o.material = new THREE.MeshLambertMaterial({ map: m.map });   // más barato que el material estándar
     }
   });
-  const base = { scene: g.scene, clips, info: {}, caderaY: 1, contraluz: new THREE.Color(contraluz || '#ff9a50') };
+  const base = { scene: g.scene, clips, info: {}, caderaY: 1, contraluz: new THREE.Color(contraluz || '#ff9a50'),
+    originales: animaciones, hipsRest };
   analizar(base);
   if (!renderer) iniciarRender();
   bases[id] = base;
+  return base;
 }
 
 function instancia(key, id) {
@@ -584,5 +612,6 @@ const R3D = {
 
 window.R3D = R3D;
 for (const [id, cfg] of Object.entries(MODELOS)) {
-  cargar(id, cfg).catch(e => console.warn('Modelo 3D no disponible (' + id + '); se usa el dibujo 2D.', e));
+  cargas[id] = cargar(id, cfg);
+  cargas[id].catch(e => console.warn('Modelo 3D no disponible (' + id + '); se usa el dibujo 2D.', e));
 }

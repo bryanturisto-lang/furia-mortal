@@ -770,6 +770,12 @@ const Game = {
         this.fx.add({ x: p.x + rand(-20, 20), y: p.y + rand(-50, 50), vx: p.vx * 0.3, vy: rand(-2, -0.5), g: 0,
           life: 14, size: rand(2, 4), color: '#ffffff', kind: 'glow' });
         break;
+      case 'acid':
+        // gotas que caen y queman el suelo, y vapor tóxico
+        if (p.t % 2 === 0) this.fx.add({ x: p.x - p.dir * rand(4, 20), y: p.y + rand(0, 8), vx: -p.dir * rand(0, 1.5), vy: rand(-1, 1),
+          g: 0.35, life: 60, size: rand(2, 4), color: chance(0.5) ? '#9be82a' : '#5fc018', kind: 'blood', splat: 'rgba(80,150,20,0.75)' });
+        if (p.t % 3 === 0) this.fx.smokePuff(p.x - p.dir * 26, p.y - 4, 12, 0.25);
+        break;
       case 'ice':
         // estela de vaho helado, destellos y alguna esquirla que cae
         this.fx.frost(p.x - p.dir * rand(20, 50), p.y + rand(-8, 8), 12, -0.2);
@@ -806,7 +812,14 @@ const Game = {
     if (res === 'none') return;
     this.impact(res, x, y, dir, m, opp);
     if (sp.style === 'ice') this.fx.shatter(x, y, 16, 6, 24);   // el cristal estalla al chocar
-    else this.fx.burst(x, y, sp.color, 22);
+    else if (sp.style === 'acid') {
+      // salpicadura de ácido que chisporrotea
+      for (let i = 0; i < 22; i++) {
+        this.fx.add({ x, y, vx: rand(-5, 5) - dir * 2, vy: rand(-6, 1), g: 0.4, life: 60, size: rand(2, 5),
+          color: chance(0.5) ? '#b8ff40' : '#5fc018', kind: 'blood', splat: 'rgba(80,150,20,0.75)' });
+      }
+      for (let i = 0; i < 6; i++) this.fx.smokePuff(x + rand(-20, 20), y + rand(-20, 10), 18, 0.35);
+    } else this.fx.burst(x, y, sp.color, 22);
     if (res === 'hit') {
       const before = this.hooks.length;
       this.applyEffect(p.owner, opp, sp.effect);
@@ -1122,11 +1135,28 @@ const Game = {
           ctx.globalAlpha = 1;
           break;
         }
-        case 'acid':
-          ctx.fillStyle = '#5fd030';
-          ctx.beginPath(); ctx.ellipse(x, y, 17, 12 + Math.sin(p.t * 0.5) * 3, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#c8ff8a'; circle(ctx, x + d * 5, y - 4, 4);
+        case 'acid': {
+          // bola de ácido líquido: núcleo brillante, borde oscuro que tiembla y halo tóxico
+          ctx.shadowBlur = 0;
+          const halo = ctx.createRadialGradient(x, y, 4, x, y, 42);
+          halo.addColorStop(0, 'rgba(170,255,60,0.35)');
+          halo.addColorStop(1, 'rgba(90,200,20,0)');
+          ctx.fillStyle = halo;
+          ctx.fillRect(x - 42, y - 42, 84, 84);
+          const wob = Math.sin(p.t * 0.7) * 2.5, rx = 17 + wob, ry = 14 - wob * 0.6;
+          const g = ctx.createRadialGradient(x + d * 4, y - 4, 1, x, y, rx);
+          g.addColorStop(0, '#f4ffb0');
+          g.addColorStop(0.35, '#a8f030');
+          g.addColorStop(0.8, '#3f9a12');
+          g.addColorStop(1, 'rgba(30,80,8,0.9)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.ellipse(x - d * 3, y, rx + 4, ry, 0, 0, Math.PI * 2); ctx.fill();
+          // cola líquida
+          ctx.beginPath(); ctx.ellipse(x - d * 18, y + 1, 10, 6 + wob * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(255,255,255,0.75)';
+          ctx.beginPath(); ctx.ellipse(x + d * 6, y - 6, 4, 2.4, -0.4 * d, 0, Math.PI * 2); ctx.fill();
           break;
+        }
         case 'bolt':
           ctx.strokeStyle = '#e8fcff'; ctx.lineWidth = 4;
           ctx.beginPath(); ctx.moveTo(x - d * 34, y);

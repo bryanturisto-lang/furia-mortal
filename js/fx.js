@@ -120,7 +120,7 @@ class FX {
       }
       else if (p.kind === 'ash') { p.vx = p.vx * 0.97 + Math.sin(p.life * 0.15) * 0.06; if (p.y > GROUND_Y + 4) { p.y = GROUND_Y + 4; p.vy = 0; p.vx = 0; p.g = 0; } }
       if (p.kind === 'blood' && p.y >= GROUND_Y + 4) {
-        if (this.splats.length < 160) this.splats.push({ x: p.x, y: GROUND_Y + rand(0, 12), w: rand(4, 12) });
+        if (this.splats.length < 160) this.splats.push({ x: p.x, y: GROUND_Y + rand(0, 12), w: rand(4, 12), c: p.splat });
         this.parts.splice(i, 1);
         continue;
       }
