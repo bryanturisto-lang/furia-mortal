@@ -9,7 +9,8 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const MODELOS = {
-  kaizen: { url: 'modelos/kaizen.glb' },
+  kaizen: { url: 'modelos/kaizen.glb', contraluz: '#ff9a50' },   // contraluz: color del brillo por detrás
+  glaciar: { url: 'modelos/glaciar.glb', contraluz: '#8cc8ff' },
 };
 
 const PPM = 104;                               // píxeles del juego por metro (1,8 m ≈ 187 px, como el dibujo 2D)
@@ -39,7 +40,7 @@ const loader = new GLTFLoader();
 const bases = {};          // id → { scene, clips: {nombre: clip}, info: {nombre: {dur, impacto}}, caderaY }
 const instancias = new Map();
 
-let renderer = null, camera = null, scene = null;
+let renderer = null, camera = null, scene = null, rim = null;
 
 function iniciarRender() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true });
@@ -53,7 +54,7 @@ function iniciarRender() {
   const key = new THREE.DirectionalLight('#ffffff', 2.3);
   key.position.set(-1.5, 3, 4);
   scene.add(key);
-  const rim = new THREE.DirectionalLight('#ff9a50', 1.4);
+  rim = new THREE.DirectionalLight('#ff9a50', 1.4);
   rim.position.set(2, 2, -3);
   scene.add(rim);
   camera = new THREE.OrthographicCamera(-BOX_W / 2 / PPM, BOX_W / 2 / PPM, (BOX_H - FOOT) / PPM, -FOOT / PPM, 0.1, 20);
@@ -93,7 +94,7 @@ function analizar(base) {
   root.traverse(o => { if (o.isSkinnedMesh) o.skeleton.pose(); });
 }
 
-async function cargar(id, { url }) {
+async function cargar(id, { url, contraluz }) {
   const g = await loader.loadAsync(url);
   const clips = {};
   for (const c of g.animations) {
@@ -112,7 +113,7 @@ async function cargar(id, { url }) {
       o.material = new THREE.MeshLambertMaterial({ map: m.map });   // más barato que el material estándar
     }
   });
-  const base = { scene: g.scene, clips, info: {}, caderaY: 1 };
+  const base = { scene: g.scene, clips, info: {}, caderaY: 1, contraluz: new THREE.Color(contraluz || '#ff9a50') };
   analizar(base);
   if (!renderer) iniciarRender();
   bases[id] = base;
@@ -264,6 +265,7 @@ function dibujar(ctx, it, x, y, escala, angulo) {
   renderer.setViewport(0, 0, vw, vh);
   renderer.setScissor(0, 0, vw, vh);
   renderer.clear();
+  rim.color.copy(it.base.contraluz);
   scene.add(it.root);
   renderer.render(scene, camera);
   scene.remove(it.root);
