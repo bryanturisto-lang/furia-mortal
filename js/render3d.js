@@ -42,6 +42,12 @@ const T_BLOQUEO = 1.17;
 const SIN_SUBIR = new Set(['caer']);
 
 const PIERNAS = /^(Hips|(Left|Right)(UpLeg|Leg|Foot|ToeBase))$/;
+// huesos que pueden tocar el suelo (pies de pie; espalda, cabeza o manos tumbado)
+const CONTACTO = /^(Hips|Spine\d*|neck|Head|(Left|Right)(Arm|ForeArm|Hand|UpLeg|Leg|Foot|ToeBase))$/;
+const HUNDIR = 0.04;   // m que se apoya la suela "dentro" del suelo, para que pise firme (la suela no es plana)
+// estados en los que el luchador está apoyado en el suelo (se le ajusta la altura para que no flote)
+const APOYADO = new Set(['idle', 'walk', 'run', 'crouch', 'block', 'cblock', 'prejump', 'land', 'recover', 'intro',
+  'win', 'dizzy', 'hit', 'grab', 'fatal', 'attack', 'down', 'dead', 'getup']);
 
 const loader = new GLTFLoader();
 const bases = {};          // id → { scene, clips: {nombre: clip}, info: {nombre: {dur, impacto}}, caderaY }
@@ -78,6 +84,14 @@ function analizar(base) {
   const hips = huesos.Hips, v = new THREE.Vector3(), h = new THREE.Vector3();
   root.updateMatrixWorld(true);
   base.caderaY = hips.getWorldPosition(h).y;
+  // para apoyar en el suelo: altura de cada pie en reposo (el grosor de la suela) y,
+  // para el resto del cuerpo, un pequeño margen (la carne alrededor del hueso)
+  base.contacto = [];
+  for (const [n, b] of Object.entries(huesos)) {
+    if (!CONTACTO.test(n)) continue;
+    const pie = /(Foot|ToeBase)$/.test(n);
+    base.contacto.push([n, pie ? b.getWorldPosition(v).y : 0.07]);
+  }
   // todos los modelos a la misma estatura en guardia (así se ven casi toda la pelea):
   // la cabeza a CABEZA_Y metros del suelo
   base.escala = 1;
@@ -254,7 +268,7 @@ function elegir(f, it) {
 }
 
 // Aplica la animación elegida, con una transición suave (acelera y frena) desde la anterior
-function aplicar(it, spec, fade = FADE.normal) {
+function aplicar(it, spec, fade = FADE.normal, apoyado = false) {
   const clave = spec.map(s => s[0]).join('+');
   if (clave !== it.clave) {
     // si la transición anterior iba por la mitad, se parte de la pose de origen para no dar saltos
@@ -282,12 +296,26 @@ function aplicar(it, spec, fade = FADE.normal) {
   poner(spec, w);
   for (const [a, p] of pesos) { a.enabled = true; a.setEffectiveWeight(p.w); a.time = p.t; }
   it.mixer.update(0);
-  // que la cadera no suba en las animaciones de caída (la altura la pone el juego)
   it.root.position.y = 0;
-  if (spec.some(s => SIN_SUBIR.has(s[0]))) {
-    it.root.updateMatrixWorld(true);
-    const y = it.huesos.Hips.getWorldPosition(new THREE.Vector3()).y;
-    it.root.position.y = -Math.max(0, y - it.base.caderaY * it.root.scale.y);
+  it.root.updateMatrixWorld(true);
+  if (apoyado) {
+    // la parte del cuerpo más baja queda justo sobre el suelo (ni flotando ni hundida)
+    const s = it.root.scale.y;
+    let min = Infinity;
+    for (const [n, h0] of it.base.contacto) {
+      const y = it.huesos[n].getWorldPosition(tmpV).y - h0 * s;
+      if (y < min) min = y;
+    }
+    const obj = -min - HUNDIR;
+    it.ajusteY = it.ajusteY == null ? obj : it.ajusteY + (obj - it.ajusteY) * Math.min(1, 0.5 * it.dtf);
+    it.root.position.y = it.ajusteY;
+  } else {
+    it.ajusteY = null;
+    // que la cadera no suba en las animaciones de caída (la altura la pone el juego)
+    if (spec.some(sp => SIN_SUBIR.has(sp[0]))) {
+      const y = it.huesos.Hips.getWorldPosition(tmpV).y;
+      it.root.position.y = -Math.max(0, y - it.base.caderaY * it.root.scale.y);
+    }
   }
 }
 
@@ -523,7 +551,8 @@ const R3D = {
     it.root.rotation.set(0, it.giro + (f.spinT || 0), 0);
     if (it.huesos.Head) it.huesos.Head.scale.setScalar(o.headless ? 0.001 : 1);
     pintar(it, o);
-    aplicar(it, elegir(f, it), fade);
+    const apoyado = APOYADO.has(f.state) && f.y >= GROUND_Y - 1 && !f.floating && !(f.move && f.move.air && f.state === 'attack');
+    aplicar(it, elegir(f, it), fade, apoyado);
     const rot = (f.state === 'held' && f.heldMode !== 'drain') || (f.state === 'jump' && f.flipping)
       ? f.pose.rot * Math.PI / 180 * f.facing : 0;
     const punto = dibujar(ctx, it, Math.round(f.x - camX), f.y, 1, rot);
@@ -548,7 +577,7 @@ const R3D = {
     it.root.scale.setScalar((ch.look.bulk || 1) * it.base.escala);
     it.root.rotation.set(0, facing * GIRO, 0);
     pintar(it, o);
-    aplicar(it, [[anim, anim === 'victoria' ? tope(it, anim, el) : ciclo(it, anim, el)]]);
+    aplicar(it, [[anim, anim === 'victoria' ? tope(it, anim, el) : ciclo(it, anim, el)]], FADE.normal, true);
     dibujar(ctx, it, x, y, Math.min(MAX_ESCALA, escala), 0);
   },
 };

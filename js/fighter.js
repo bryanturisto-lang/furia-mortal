@@ -1475,7 +1475,9 @@ class Fighter {
     const lying = this.state === 'down' || this.state === 'dead';
     ctx.fillStyle = `rgba(0,0,0,${0.45 * s})`;
     ctx.beginPath();
-    ctx.ellipse(this.x - camX + (lying ? -this.facing * 40 : 0), GROUND_Y + 3, (lying ? 80 : 42) * s * this.bulk, 8 * s, 0, 0, Math.PI * 2);
+    // en 3D la sombra va justo bajo los pies (el modelo pisa la línea del suelo)
+    const sy = window.R3D && R3D.has(this.ch) ? GROUND_Y : GROUND_Y + 3;
+    ctx.ellipse(this.x - camX + (lying ? -this.facing * 40 : 0), sy, (lying ? 80 : 42) * s * this.bulk, 8 * s, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 }
