@@ -112,7 +112,73 @@ const Stage = {
     this.mid = mid;
   },
 
+  // Escenario realista: fondo pintado (Meshy) con parallax + suelo 3D en perspectiva (render3d.js).
+  // Mientras la imagen no cargue (o si falla) se usa el escenario dibujado de siempre.
+  foto: (() => { const im = new Image(); im.src = 'modelos/fondo.jpg'; return im; })(),
+  FOTO_S: 0.8,
+  // braseros de la imagen original (x, y de la llama, en px de la imagen 1376x768) y su tamaño
+  BRASEROS: [[95, 488, 1.3], [440, 478, 0.7], [938, 478, 0.7], [1278, 488, 1.3]],
+  // antorchas de pared (x, y, tamaño)
+  ANTORCHAS: [[66, 296, 0.6], [1312, 296, 0.6], [397, 395, 0.4], [608, 418, 0.3], [774, 418, 0.3], [983, 395, 0.4]],
+
   draw(ctx, camX, t) {
+    const im = this.foto;
+    if (im.complete && im.naturalWidth) this.drawReal(ctx, camX, t, im);
+    else this.drawClassic(ctx, camX, t);
+  },
+
+  drawReal(ctx, camX, t, im) {
+    const s = this.FOTO_S, bw = im.naturalWidth * s, bh = im.naturalHeight * s;
+    const ox = -Math.max(0, Math.min(STAGE_W - W, camX)) * (bw - W) / (STAGE_W - W);
+    ctx.drawImage(im, ox, 0, bw, bh);
+
+    // fuego vivo sobre los braseros y antorchas de la pintura
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const fuego = (x, y, k, i) => {
+      const f = 0.75 + Math.sin(t * 0.21 + i * 2.3) * 0.12 + Math.sin(t * 0.53 + i) * 0.08 + Math.random() * 0.1;
+      const r = 60 * k * f;
+      const g = ctx.createRadialGradient(x, y, 2, x, y, r);
+      g.addColorStop(0, `rgba(255,190,90,${0.38 * f})`);
+      g.addColorStop(0.35, `rgba(255,110,30,${0.18 * f})`);
+      g.addColorStop(1, 'rgba(255,60,10,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      if (Math.random() < 0.18 * k) this.embers.push({ x: x - ox, y: y - 6 * k, vx: rand(-0.35, 0.35), vy: rand(-1.6, -0.6), life: rand(30, 70) });
+    };
+    this.BRASEROS.forEach(([x, y, k], i) => fuego(ox + x * s, y * s, k, i));
+    this.ANTORCHAS.forEach(([x, y, k], i) => fuego(ox + x * s, y * s, k, i + 4));
+    for (let i = this.embers.length - 1; i >= 0; i--) {
+      const e = this.embers[i];
+      e.x += e.vx + Math.sin((t + i * 13) * 0.05) * 0.2; e.y += e.vy; e.life--;
+      if (e.life <= 0) { this.embers.splice(i, 1); continue; }
+      ctx.fillStyle = `rgba(255,${140 + (e.life | 0)},60,${Math.min(1, e.life / 30)})`;
+      ctx.fillRect(e.x + ox, e.y, 2, 2);
+    }
+    ctx.restore();
+
+    // neblina que se arrastra al pie de los muros
+    for (let i = 0; i < 6; i++) {
+      const x = ((i * 230 + t * (0.25 + i * 0.04)) % (W + 400)) - 200 + ox * 0.5 % 200;
+      const y = 380 + (i % 3) * 14;
+      const g = ctx.createRadialGradient(x, y, 10, x, y, 190);
+      g.addColorStop(0, 'rgba(150,140,160,0.10)');
+      g.addColorStop(1, 'rgba(150,140,160,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - 190, y - 190, 380, 380);
+    }
+
+    // suelo de piedra en perspectiva (se mueve igual que los luchadores)
+    if (!(window.R3D && R3D.drawFloor(ctx, camX))) this.drawFloor(ctx, camX);
+    // viñeta para dar profundidad
+    const v = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.35, W / 2, H * 0.55, H * 1.05);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+  },
+
+  drawClassic(ctx, camX, t) {
     // cielo
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, '#07040c');

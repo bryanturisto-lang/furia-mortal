@@ -651,7 +651,7 @@ const Game = {
     switch (sp.style) {
       case 'lanza':
         // brasas que deja el gancho al volar
-        for (let i = 0; i < 2; i++) {
+        if (p.t % 2 === 0) {
           this.fx.add({ x: p.x - p.dir * rand(0, 20), y: p.y + rand(-8, 8), vx: -p.dir * rand(0.5, 2), vy: rand(-1.5, 0.3), g: -0.02,
             life: rand(12, 22), size: rand(1.5, 3), color: chance(0.5) ? '#ffcc40' : '#ff7a1a', kind: 'glow' });
         }
@@ -739,7 +739,34 @@ const Game = {
         const t = i / 12;
         pts.push(lerp(hx, ex, t) - camX, lerp(hy, ey, t) + Math.sin(t * Math.PI) * tense * Math.sin(this.t * 0.9 + t * 8));
       }
-      drawHookChain(ctx, pts, this.t * 3);
+      this.drawLanza(pts);
+    }
+  },
+
+  // Cadena de la Lanza Infernal: de metal en 3D (si está disponible) con un resplandor de calor y chispas
+  drawLanza(pts, ang) {
+    const n = pts.length;
+    if (ang == null) ang = Math.atan2(pts[n - 1] - pts[n - 3], pts[n - 2] - pts[n - 4]);
+    if (!(window.R3D && R3D.drawChain)) { drawHookChain(ctx, pts, this.t * 3, ang); return; }
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const [w, a] of [[14, 0.05], [6, 0.08]]) {
+      ctx.strokeStyle = `rgba(255,90,20,${a})`;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(pts[0], pts[1]);
+      for (let i = 2; i < n; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+      ctx.stroke();
+    }
+    ctx.restore();
+    R3D.drawChain(ctx, pts, ang);
+    // chispas que se desprenden del metal caliente
+    if (this.t % 4 === 0) {
+      const i = 2 * Math.floor(Math.random() * (n / 2));
+      this.fx.add({ x: pts[i] + this.camX, y: pts[i + 1], vx: rand(-1, 1), vy: rand(-2, 0.5), g: 0.12,
+        life: rand(10, 22), size: rand(1, 2.2), color: chance(0.5) ? '#ffd27a' : '#ff8a2a', kind: 'glow' });
     }
   },
 
@@ -894,7 +921,7 @@ const Game = {
             const t = i / 14;
             pts.push(lerp(hx - camX, x, t), lerp(hy, y, t) + Math.sin(t * Math.PI) * amp * Math.sin(p.t * 0.7 - t * 9));
           }
-          drawHookChain(ctx, pts, p.t * 3, d > 0 ? 0 : Math.PI);
+          this.drawLanza(pts, d > 0 ? 0 : Math.PI);
           break;
         }
         case 'ice': {

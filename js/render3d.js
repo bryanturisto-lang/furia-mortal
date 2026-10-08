@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const MODELOS = {
   kaizen: { url: 'modelos/kaizen.glb' },
@@ -285,8 +286,168 @@ function dibujar(ctx, it, x, y, escala, angulo) {
   };
 }
 
+// ---------- Escenario: suelo de piedra en perspectiva real + efectos 3D (cadena de la Lanza Infernal) ----------
+// Un segundo renderizador del tamaño de la pantalla. El suelo se mueve 1:1 con los luchadores (a su profundidad,
+// 1 m = PPM px) y se funde con el fondo pintado hacia el horizonte.
+const SUELO_TOP = 380, HORIZONTE = 370, FOCAL = 624, CAM_H = 0.96, CAM_D = FOCAL / PPM;
+let esc = null;
+
+function iniciarEscena() {
+  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, premultipliedAlpha: true });
+  r.setPixelRatio(1);
+  r.setSize(W * MAX_RES, H * MAX_RES, false);
+  r.outputColorSpace = THREE.SRGBColorSpace;
+  r.setClearColor(0x000000, 0);
+  r.setScissorTest(true);
+  esc = { r, suelo: null, cadena: null };
+
+  // suelo
+  const tex = new THREE.TextureLoader().load('modelos/suelo.jpg', () => { esc.suelo.listo = true; });
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = r.capabilities.getMaxAnisotropy();
+  const LADO = 3.4, ANCHO = 120, Z0 = 6, Z1 = -40;
+  tex.repeat.set(ANCHO / LADO, (Z0 - Z1) / LADO);
+  const geo = new THREE.PlaneGeometry(ANCHO, Z0 - Z1, 1, 46);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(STAGE_W / 2 / PPM, 0, (Z0 + Z1) / 2);
+  // se desvanece hacia el fondo para fundirse con la pintura
+  const pos = geo.attributes.position, col = new Float32Array(pos.count * 4);
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i), a = Math.max(0, Math.min(1, (z + 22) / 13));
+    col.set([1, 1, 1, a * a * (3 - 2 * a)], i * 4);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 4));
+  const mat = new THREE.MeshLambertMaterial({ map: tex, vertexColors: true, transparent: true });
+  const sc = new THREE.Scene();
+  sc.add(new THREE.Mesh(geo, mat));
+  sc.add(new THREE.AmbientLight('#c8c0d0', 1.25));
+  // luz de los braseros (cálida, titila) y de la luna (fría, rasante)
+  const calido = new THREE.PointLight('#ff9a50', 22, 16, 1.4);
+  calido.position.set(STAGE_W / 2 / PPM, 2.2, -3);
+  sc.add(calido);
+  const luna = new THREE.DirectionalLight('#aab4ff', 0.9);
+  luna.position.set(-2, 3, -6);
+  sc.add(luna);
+  const cam = new THREE.PerspectiveCamera(2 * Math.atan(HORIZONTE / FOCAL) * 180 / Math.PI, W / (HORIZONTE * 2), 0.1, 80);
+  cam.setViewOffset(W, HORIZONTE * 2, 0, SUELO_TOP, W, H - SUELO_TOP);
+  esc.suelo = { sc, cam, calido, listo: false };
+}
+
+// Cadena y gancho de metal (modelados aquí, sin archivos): eslabones de hierro y un kunai con lengüetas y argolla
+function crearCadena() {
+  const env = new THREE.PMREMGenerator(esc.r);
+  const sc = new THREE.Scene();
+  sc.environment = env.fromScene(new RoomEnvironment(), 0.04).texture;
+  // hierro oscuro apenas al rojo, acero pulido con brillos
+  const hierro = new THREE.MeshStandardMaterial({ color: '#4a4440', metalness: 0.9, roughness: 0.42,
+    emissive: '#ff3a00', emissiveIntensity: 0.07, envMapIntensity: 1.3 });
+  const acero = new THREE.MeshStandardMaterial({ color: '#9a9aa4', metalness: 0.9, roughness: 0.3, envMapIntensity: 1.6 });
+  const MAX = 90;
+  const eslabon = new THREE.TorusGeometry(4.2, 1.3, 8, 14);
+  eslabon.scale(1.45, 1, 1);
+  const links = new THREE.InstancedMesh(eslabon, hierro, MAX);
+  links.frustumCulled = false;
+  sc.add(links);
+
+  // kunai: hoja en forma de hoja con dos lengüetas hacia atrás, mango y argolla (apunta a +X, unos 64 px)
+  const s = new THREE.Shape();
+  s.moveTo(64, 0);
+  s.quadraticCurveTo(44, 11, 26, 13);
+  s.lineTo(14, 22); s.lineTo(18, 8);           // lengüeta superior
+  s.lineTo(12, 5); s.lineTo(12, -5);
+  s.lineTo(18, -8); s.lineTo(14, -22);         // lengüeta inferior
+  s.lineTo(26, -13);
+  s.quadraticCurveTo(44, -11, 64, 0);
+  const hoja = new THREE.ExtrudeGeometry(s, { depth: 1.5, bevelEnabled: true, bevelThickness: 2.4, bevelSize: 2, bevelSegments: 3 });
+  hoja.translate(0, 0, -1);
+  const gancho = new THREE.Group();
+  gancho.add(new THREE.Mesh(hoja, acero));
+  const mango = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3, 14, 10), new THREE.MeshStandardMaterial({ color: '#2a1a14', roughness: 0.8 }));
+  mango.rotation.z = Math.PI / 2; mango.position.x = 5;
+  gancho.add(mango);
+  const argolla = new THREE.Mesh(new THREE.TorusGeometry(5, 1.6, 8, 16), hierro);
+  argolla.position.x = -6;
+  gancho.add(argolla);
+  sc.add(gancho);
+
+  sc.add(new THREE.AmbientLight('#ffffff', 0.25));
+  const key = new THREE.DirectionalLight('#fff4ea', 2.6);
+  key.position.set(-0.4, 1, 1);
+  sc.add(key);
+  const fuego = new THREE.DirectionalLight('#ff7a30', 1.4);   // reflejo cálido de los braseros desde abajo
+  fuego.position.set(0.3, -1, 0.6);
+  sc.add(fuego);
+  const cam = new THREE.OrthographicCamera(0, W, 0, -H, -200, 200);
+  esc.cadena = { sc, cam, links, gancho, MAX, m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), sz: new THREE.Vector3(1, 1, 1) };
+}
+
+// dibuja el último render de la escena (región x,y,w,h en px del juego) sobre el contexto del juego
+function volcar(ctx, x, y, w, h, res) {
+  const c = esc.r.domElement;
+  ctx.drawImage(c, 0, c.height - Math.round(h * res), Math.round(w * res), Math.round(h * res), x, y, w, h);
+}
+
 const R3D = {
   has(ch) { return !!(ch && bases[ch.id]); },
+
+  // Suelo en perspectiva (true si se dibujó; si no, el escenario usa su suelo 2D)
+  drawFloor(ctx, camX) {
+    if (!esc) iniciarEscena();
+    const S = esc.suelo;
+    if (!S.listo) return false;
+    const res = Math.min(MAX_RES, Math.max(1, typeof RES === 'number' ? RES : 1));
+    const h = H - SUELO_TOP;
+    S.cam.position.set((camX + W / 2) / PPM, CAM_H, CAM_D);
+    S.calido.intensity = 21 + Math.sin(performance.now() * 0.011) * 2.5 + Math.random() * 2;
+    esc.r.setViewport(0, 0, W * res, h * res);
+    esc.r.setScissor(0, 0, W * res, h * res);
+    esc.r.clear();
+    esc.r.render(S.sc, S.cam);
+    volcar(ctx, 0, SUELO_TOP, W, h, res);
+    return true;
+  },
+
+  // Cadena de metal de la mano al gancho. pts = [x0,y0,x1,y1,...] en px de pantalla; ang = dirección del gancho
+  drawChain(ctx, pts, ang) {
+    if (!esc) iniciarEscena();
+    if (!esc.cadena) crearCadena();
+    const C = esc.cadena, n = pts.length;
+    // recuadro que ocupa la cadena (solo se dibuja esa zona)
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (let i = 0; i < n; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); y0 = Math.min(y0, pts[i + 1]); y1 = Math.max(y1, pts[i + 1]); }
+    x0 = Math.floor(x0 - 80); y0 = Math.floor(y0 - 80); x1 = Math.ceil(x1 + 80); y1 = Math.ceil(y1 + 80);
+    const w = x1 - x0, h = y1 - y0;
+    // eslabones cada 9 px, girados 90° uno sí y otro no
+    let k = 0, acc = 0;
+    for (let i = 2; i < n && k < C.MAX; i += 2) {
+      const ax = pts[i - 2], ay = pts[i - 1], bx = pts[i], by = pts[i + 1];
+      const len = Math.hypot(bx - ax, by - ay), a = -Math.atan2(by - ay, bx - ax);
+      for (; acc < len && k < C.MAX; acc += 9, k++) {
+        const t = acc / len;
+        C.v.set(ax + (bx - ax) * t, -(ay + (by - ay) * t), 0);
+        C.e.set(k % 2 ? Math.PI / 2 : 0.3, 0, a, 'ZYX');   // primero el giro sobre su eje, luego la dirección
+        C.q.setFromEuler(C.e);
+        C.m.compose(C.v, C.q, C.sz);
+        C.links.setMatrixAt(k, C.m);
+      }
+      acc -= len;
+    }
+    C.links.count = k;
+    C.links.instanceMatrix.needsUpdate = true;
+    const hx = pts[n - 2], hy = pts[n - 1];
+    C.gancho.position.set(hx, -hy, 0);
+    // el kunai es simétrico: basta con girarlo; además gira sobre su eje para que el acero destelle
+    C.gancho.rotation.set(0.9 + Math.sin(performance.now() * 0.012) * 0.35, 0, -ang, 'ZYX');
+    C.cam.left = x0; C.cam.right = x1; C.cam.top = -y0; C.cam.bottom = -y1;
+    C.cam.updateProjectionMatrix();
+    const res = Math.min(MAX_RES, Math.max(1, typeof RES === 'number' ? RES : 1));
+    esc.r.setViewport(0, 0, w * res, h * res);
+    esc.r.setScissor(0, 0, w * res, h * res);
+    esc.r.clear();
+    esc.r.render(C.sc, C.cam);
+    volcar(ctx, x0, y0, w, h, res);
+  },
 
   // Luchador en combate
   drawFighter(ctx, f, camX, o = {}) {
