@@ -18,6 +18,7 @@ const BOX_W = 400, BOX_H = 350, FOOT = 40;     // recuadro de cada luchador (px 
 const MAX_ESCALA = 1.6, MAX_RES = 2;
 const GIRO = 62 * Math.PI / 180;               // de perfil (90°), girado un poco hacia la cámara
 const FADE = 7;                                // frames de transición entre animaciones
+const CABEZA_Y = 1.58;                         // altura de la cabeza en guardia (m): iguala la estatura de todos
 
 // golpe del juego (move.pose) → animación
 const ATAQUE = {
@@ -71,6 +72,17 @@ function analizar(base) {
   const hips = huesos.Hips, v = new THREE.Vector3(), h = new THREE.Vector3();
   root.updateMatrixWorld(true);
   base.caderaY = hips.getWorldPosition(h).y;
+  // todos los modelos a la misma estatura en guardia (así se ven casi toda la pelea):
+  // la cabeza a CABEZA_Y metros del suelo
+  base.escala = 1;
+  if (huesos.Head && base.clips.guardia) {
+    const g = mixer.clipAction(base.clips.guardia).play();
+    g.time = 0;
+    mixer.update(0);
+    root.updateMatrixWorld(true);
+    base.escala = CABEZA_Y / huesos.Head.getWorldPosition(v).y;
+    g.stop();
+  }
   for (const [nombre, clip] of Object.entries(base.clips)) {
     if (nombre.includes(':')) continue;
     const act = mixer.clipAction(clip).play();
@@ -460,7 +472,7 @@ const R3D = {
       it.estado = f.state; it.ataque = atk; it.t0 = f.t;
     }
     const b = f.bulk * f.fxScale;
-    it.root.scale.setScalar(b);
+    it.root.scale.setScalar(b * it.base.escala);
     it.root.rotation.set(0, f.facing * GIRO + (f.spinT || 0), 0);
     if (it.huesos.Head) it.huesos.Head.scale.setScalar(o.headless ? 0.001 : 1);
     pintar(it, o);
@@ -484,7 +496,7 @@ const R3D = {
     const ahora = performance.now() / 1000;
     if (it.estado !== anim) { it.estado = anim; it.t0 = ahora; }
     const el = ahora - it.t0;
-    it.root.scale.setScalar(ch.look.bulk || 1);
+    it.root.scale.setScalar((ch.look.bulk || 1) * it.base.escala);
     it.root.rotation.set(0, facing * GIRO, 0);
     pintar(it, o);
     aplicar(it, [[anim, anim === 'victoria' ? tope(it, anim, el) : ciclo(it, anim, el)]]);
