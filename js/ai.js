@@ -94,7 +94,7 @@ class AI {
 
     // Proyectiles que vienen hacia mí
     for (const pr of game.projectiles) {
-      if (pr.owner === me || this.seenProj.has(pr) || pr.delay > 0 || pr.spec.style === 'erupt') continue;
+      if (pr.owner === me || this.seenProj.has(pr) || pr.delay > 0 || pr.spec.erupt) continue;
       const d = (me.x - pr.x) * Math.sign(pr.vx || 1);
       if (d > 0 && d < 340) {
         this.seenProj.add(pr);

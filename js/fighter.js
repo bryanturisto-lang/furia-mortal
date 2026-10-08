@@ -882,7 +882,7 @@ class Fighter {
       case 'proj': if (t === m.startup) game.spawnProjectile(this, m.sp.proj); break;
       case 'erupt':
         if (t === 1) this.eruptX = opp.x;
-        if (t === m.startup) game.spawnErupt(this, this.eruptX);
+        if (t === m.startup) game.spawnErupt(this, this.eruptX, m.sp.erupt);
         break;
       case 'invis':
         if (t === m.startup) { this.invis = 420; game.fx.smoke(this.x, this.y - 90, this.ch.color); Sound.special('sombra'); }
@@ -897,7 +897,7 @@ class Fighter {
         if (this.state !== 'attack') return;
         break;
       case 'dash':
-        this.updateDash(t, end);
+        this.updateDash(t, end, game);
         if (this.state !== 'attack') return;
         break;
       default:
@@ -931,12 +931,17 @@ class Fighter {
     }
   }
 
-  updateDash(t, end) {
+  updateDash(t, end, game) {
     const m = this.move;
-    if (t === m.startup) { Sound.whoosh(true); this.trailOn = !!m.trail; }
+    if (t === m.startup) { Sound.whoosh(true); this.trailOn = !!m.trail && !m.fire; if (m.fire) Sound.special('fuego'); }
     if (t >= m.startup && t < end) {
       if (this.hasHit && !m.multi) { this.endDash(); return; }
       this.vx = this.facing * m.speed;
+      if (m.fire) {
+        // estela de llamas detrás del puño
+        for (let i = 0; i < 3; i++) game.fx.flame(this.x - this.facing * rand(0, 50), this.y - rand(90, 150), 13, -1.2, 1.6);
+        if (t % 3 === 0) game.fx.smokePuff(this.x - this.facing * 60, this.y - 120, 14, 0.35);
+      }
       if (m.air) { this.floating = true; this.vy = 0; this.y = lerp(this.y, GROUND_Y - m.air, 0.3); }
       if (m.spin) this.spinT += 0.45;
     } else if (t === end) {

@@ -20,7 +20,11 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('furia.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('furia.' + k, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } },
 };
-const ERUPT = { dmg: 11, w: 70, h: 220, color: '#7dff6a', effect: 'launch', style: 'erupt' };
+// Erupciones bajo el rival: ácido (ALMA) o lava (KAIZEN)
+const ERUPTS = {
+  acido: { dmg: 11, w: 70, h: 220, color: '#7dff6a', effect: 'launch', style: 'erupt', erupt: true },
+  lava:  { dmg: 12, w: 76, h: 230, color: '#ff7a1a', effect: 'launch', style: 'lava', erupt: true, life: 26 },
+};
 const LADDER_SIZE = 7;
 const GRID_COLS = 4;
 const HOOK_PULL = 16;     // frames que tarda la cadena de la Lanza Infernal en arrastrar al rival
@@ -270,9 +274,10 @@ const Game = {
   ultraStart(f) {
     this.dark = 0.7;
     this.hitstop = 10;
+    const aura = f.ch.look.aura || ['#2f6fd8', '#bfefff'], fuego = f.ch.id === 'kaizen';
     this.banner(`¡${f.spName.toUpperCase()}!`, { life: 70, size: 54, y: H * 0.3, keep: true,
-      colors: ['#ffffff', '#bfefff', '#2f6fd8'] });
-    Sound.special('freeze');
+      colors: fuego ? ['#ffffff', '#ffcc40', '#ff5a10'] : ['#ffffff', aura[0], '#2f6fd8'] });
+    Sound.special(fuego ? 'fuego' : 'freeze');
     Sound.special('viento');
     Sound.say(f.spName, 0.4, 0.9);
   },
@@ -430,12 +435,14 @@ const Game = {
     this.banners = [];
     this.ghost = null;
     this.fanFly = null;
+    this.fatalChain = null;
+    this.fatalPull = null;
     Sound.special(w.ch.specials[0].proj || 'sombra');
   },
 
   updateFatality() {
     const st = this.st, w = this.winner, l = this.loser, F = this.fatal, mode = F.mode;
-    this.dark = Math.min(0.75, st / 40);
+    this.dark = Math.min(mode === 'cadenas' ? 0.45 : 0.75, st / 40);   // con fuego, menos oscuro para verlo
     if (st > 12 && st < 80) {
       const p = (st - 12) / 68;
       if (mode === 'shatter') l.frozen = 999;
@@ -443,7 +450,7 @@ const Game = {
       else if (F.tint) l.tint = st % 8 < 4 ? F.tint : null;
       if (mode === 'melt') l.melt = p * 0.9;
       if (mode === 'implode') l.fxScale = Math.max(0.1, 1 - p) * (1 + Math.sin(st * 0.8) * 0.06);
-      if (mode !== 'decap') {
+      if (mode !== 'decap' && mode !== 'cadenas') {
         for (let i = 0; i < (mode === 'burn' ? 5 : 3); i++) {
           this.fx.add({ x: l.x + rand(-28, 28), y: l.y - rand(10, 175) * (1 - l.melt), vx: rand(-1, 1),
             vy: mode === 'burn' ? rand(-4, -1.5) : rand(-3, -0.5), g: mode === 'melt' ? 0.2 : -0.02,
@@ -452,6 +459,7 @@ const Game = {
         if (st % 10 === 0) Sound.special(mode === 'shatter' ? 'freeze' : mode === 'burn' ? 'fuego' : 'rayo');
       }
     }
+    if (mode === 'cadenas') this.updateCadenas(st, w, l);
     if (mode === 'decap' && st > 20 && st <= 80) this.fanFly = (st - 20) / 60;
     if (st === 80) this.fatalClimax();
     if (mode === 'decap' && st > 80 && st < 170 && l.state !== 'dead') {
@@ -463,9 +471,9 @@ const Game = {
     }
     if (mode === 'decap' && st === 115) { l.state = 'launched'; l.vy = -2; l.vx = -l.facing * 1.5; }
     if (st === 125) {
-      this.banner('FATALITY', { life: 99999, size: 120, y: H * 0.34, colors: ['#ff8a8a', '#e01010', '#5a0000'] });
+      this.banner('EJECUCIÓN', { life: 99999, size: 110, y: H * 0.34, colors: ['#ff8a8a', '#e01010', '#5a0000'] });
       this.banner(F.name, { life: 99999, size: 30, y: H * 0.47, keep: true, colors: ['#ffffff', '#ffd0c0', '#ff9a8a'] });
-      Sound.say('Fatality', 0.1, 0.6);
+      Sound.say('Ejecución', 0.1, 0.6);
     }
     if (st === 250) {
       w.state = 'win';
@@ -477,6 +485,45 @@ const Game = {
       this.fatalityDone = true;
       this.setState('matchOver');
     }
+  },
+
+  // INFIERNO ENCADENADO (KAIZEN): la cadena se clava en el pecho del rival, lo arrastra,
+  // el fuego lo envuelve desde los pies, se carboniza y se deshace en cenizas.
+  updateCadenas(st, w, l) {
+    const chest = () => [l.x - w.facing * 4, l.y - 125];
+    if (st === 8) { this.fatalChain = { k: 0, out: true }; Sound.special('lanza'); }
+    const c = this.fatalChain;
+    if (c && c.out && st <= 16) c.k = (st - 8) / 8;
+    if (st === 16) {
+      const [cx, cy] = chest();
+      this.fx.blood(cx, cy, -w.facing, 26);
+      this.fx.sparks(cx, cy, -w.facing, '#ffd060');
+      this.shake = Math.max(this.shake, 10);
+      Sound.hit(true);
+      Sound.say('¡Ven aquí!', 0.5, 1.1);
+      this.fatalPull = { x0: l.x, x1: w.x + w.facing * 95 };
+    }
+    if (st > 16 && st <= 30 && this.fatalPull) {
+      const k = (st - 16) / 14;
+      l.x = lerp(this.fatalPull.x0, this.fatalPull.x1, k * k);
+    }
+    if (st >= 26 && st < 80) {
+      // el fuego sube desde los pies y lo cubre entero
+      // (pocas llamas y por los bordes del cuerpo, para que se vea cómo se quema la silueta)
+      const p = (st - 26) / 54, top = 30 + p * 170;
+      for (let i = 0; i < 2 + p * 2; i++) {
+        const side = chance(0.5) ? -1 : 1;
+        this.fx.flame(l.x + side * rand(10, 30), l.y - rand(0, top), 11 + p * 7, -2.4 - p * 1.6, 1.1);
+      }
+      if (st % 3 === 0) this.fx.flame(l.x + rand(-12, 12), l.y - top + rand(-10, 10), 14 + p * 8, -3, 1);
+      if (st % 2 === 0) this.fx.smokePuff(l.x + rand(-30, 30), l.y - top - rand(10, 50), 22 + p * 14, 0.5 + p * 0.3);
+      if (st % 8 === 0) Sound.special('fuego');
+      // la piel y la ropa se ennegrecen
+      const char = ['#ff7a30', '#c04a1a', '#7a2a12', '#3a2018', '#1c1210', '#120c0a'];
+      l.tint = st < 40 && st % 6 < 3 ? '#ffd080' : char[Math.min(char.length - 1, Math.floor(p * char.length))];
+      this.shake = Math.max(this.shake, 2);
+    }
+    if (st > 80 && c) { c.out = false; c.k = Math.max(0, 1 - (st - 80) / 12); if (c.k <= 0) this.fatalChain = null; }
   },
 
   fatalClimax() {
@@ -517,6 +564,18 @@ const Game = {
         this.fx.splat(l.x, '#3f8a1c', 26);
         Sound.special('acido');
         break;
+      case 'cadenas': {
+        // se deshace en cenizas: quedan los huesos carbonizados humeando
+        l.gone = true;
+        this.fx.skeletons.push({ x: l.x, dir: l.facing, burnt: true });
+        this.fx.ash(l.x, l.y, 140);
+        for (let i = 0; i < 14; i++) this.fx.smokePuff(l.x + rand(-40, 40), l.y - rand(20, 170), 30, 0.75);
+        for (let i = 0; i < 20; i++) this.fx.flame(l.x + rand(-40, 40), l.y - rand(0, 160), 24, -3, 2);
+        this.fx.burst(l.x, l.y - 100, '#ffb030', 40, 7);
+        Sound.explode();
+        Sound.special('fuego');
+        break;
+      }
       case 'burn':
         l.gone = true;
         bones();
@@ -560,11 +619,11 @@ const Game = {
     Sound.special(PROJ_SFX[type] || type);
   },
 
-  spawnErupt(owner, x) {
-    this.projectiles.push({ owner, type: 'erupt', spec: ERUPT, x, x0: x, y: GROUND_Y - 110, dir: owner.facing,
+  spawnErupt(owner, x, type = 'acido') {
+    this.projectiles.push({ owner, type: 'erupt', spec: ERUPTS[type], x, x0: x, y: GROUND_Y - 110, dir: owner.facing,
       speed: 0, vx: 0, vy: 0, t: 0, delay: 22, dead: false, noClash: true });
     owner.projCount++;
-    Sound.special('acido');
+    Sound.special(type === 'lava' ? 'fuego' : 'acido');
   },
 
   projBox(p) { return { x: p.x - p.spec.w / 2, y: p.y - p.spec.h / 2, w: p.spec.w, h: p.spec.h }; },
@@ -576,7 +635,7 @@ const Game = {
       const sp = p.spec;
       if (p.delay > 0) {
         if (--p.delay === 0) {
-          if (sp.style === 'erupt') { Sound.special('fuego'); this.shake = Math.max(this.shake, 8); }
+          if (sp.erupt) { Sound.special('fuego'); this.shake = Math.max(this.shake, sp.style === 'lava' ? 12 : 8); }
           else { p.x = p.owner.x + p.dir * 58; Sound.special('fuego'); }
         }
         continue;
@@ -586,10 +645,25 @@ const Game = {
         // al terminar la tormenta, el rival queda congelado
         const opp = this.f[p.owner === this.f[0] ? 1 : 0];
         if (sp.finalFreeze && p.hits > 0 && opp.state === 'hit' && opp.hp > 0) { opp.frozen = 90; Sound.special('freeze'); }
+        // al terminar la llamarada, el rival sale despedido envuelto en humo
+        if (sp.finalLaunch && p.hits > 0 && opp.state === 'hit' && opp.hp > 0) {
+          Object.assign(opp, { state: 'launched', vy: -11, vx: p.dir * 4, pulled: 0 });
+          this.fx.burst(opp.x, opp.y - 100, '#ffb030', 30, 8);
+          this.shake = Math.max(this.shake, 12);
+          Sound.explode();
+        }
         p.dead = true;
         continue;
       }
-      if (sp.style === 'erupt') {
+      if (sp.style === 'lava') {
+        // columna de lava: llamas, humo y piedras que saltan
+        for (let i = 0; i < 5; i++) this.fx.flame(p.x + rand(-26, 26), GROUND_Y - rand(0, 200) * Math.min(1, p.t / 5), 20, -4.5, 1.2);
+        if (p.t % 2 === 0) this.fx.smokePuff(p.x + rand(-30, 30), GROUND_Y - rand(150, 240), 26, 0.6);
+        if (p.t < 6) {
+          this.fx.add({ x: p.x + rand(-20, 20), y: GROUND_Y - 10, vx: rand(-5, 5), vy: rand(-13, -7), g: 0.5, life: 60,
+            size: rand(4, 8), color: chance(0.5) ? '#2a201c' : '#4a3a30', kind: 'gib', rot: rand(0, 6), vr: rand(-0.3, 0.3) });
+        }
+      } else if (sp.style === 'erupt') {
         if (p.t > 14) { p.dead = true; continue; }
         for (let i = 0; i < 4; i++) {
           this.fx.add({ x: p.x + rand(-30, 30), y: GROUND_Y - rand(0, 40), vx: rand(-0.5, 0.5), vy: rand(-12, -6), g: 0.1,
@@ -629,7 +703,8 @@ const Game = {
         if (p.t - p.lastHit >= sp.multi) { p.lastHit = p.t; p.hits++; this.projHit(p, opp, opp.x, opp.y - 100); }
         continue;
       }
-      if (sp.wall) {
+      if (sp.wall || sp.style === 'lava') {
+        // golpea una sola vez pero sigue a la vista hasta apagarse
         if (!p.hits) { p.hits = 1; this.projHit(p, opp, opp.x, opp.y - 60); }
         continue;
       }
@@ -655,6 +730,19 @@ const Game = {
           this.fx.add({ x: p.x - p.dir * rand(0, 20), y: p.y + rand(-8, 8), vx: -p.dir * rand(0.5, 2), vy: rand(-1.5, 0.3), g: -0.02,
             life: rand(12, 22), size: rand(1.5, 3), color: chance(0.5) ? '#ffcc40' : '#ff7a1a', kind: 'glow' });
         }
+        break;
+      case 'fireball':
+        // llamas que se quedan atrás y humo
+        for (let i = 0; i < 3; i++) this.fx.flame(p.x - p.dir * rand(4, 30), p.y + rand(-10, 10), 15, -1, 0.8);
+        if (p.t % 3 === 0) this.fx.smokePuff(p.x - p.dir * 40, p.y - 6, 12, 0.35);
+        break;
+      case 'firestorm':
+        // remolino de fuego sobre el rival
+        for (let i = 0; i < 7; i++) {
+          const a = p.t * 0.35 + i * 0.9, r = 30 + (i % 3) * 18;
+          this.fx.flame(p.x + Math.cos(a) * r, GROUND_Y - rand(0, 250), 22, -3.5, 1.4);
+        }
+        if (p.t % 2 === 0) this.fx.smokePuff(p.x + rand(-60, 60), GROUND_Y - rand(200, 300), 32, 0.55);
         break;
       case 'bolt': case 'net': break;
       case 'missile':
@@ -849,8 +937,32 @@ const Game = {
 
   drawEruptWarnings(camX) {
     for (const p of this.projectiles) {
-      if (p.spec.style !== 'erupt' || p.delay <= 0) continue;
+      if (!p.spec.erupt || p.delay <= 0) continue;
       const a = 0.3 + 0.3 * Math.sin(this.t * 0.6);
+      if (p.spec.style === 'lava') {
+        // el suelo se agrieta y brilla al rojo antes de reventar
+        const k = 1 - p.delay / 22, x = p.x - camX;
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createRadialGradient(x, GROUND_Y + 4, 2, x, GROUND_Y + 4, 50);
+        g.addColorStop(0, `rgba(255,200,90,${0.5 * k + a * 0.3})`);
+        g.addColorStop(1, 'rgba(255,60,0,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.ellipse(x, GROUND_Y + 4, 50, 12, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = `rgba(255,150,40,${0.4 + 0.6 * k})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const ang = i * 1.05 + 0.3, r = 14 + 30 * k;
+          ctx.moveTo(x, GROUND_Y + 4);
+          ctx.lineTo(x + Math.cos(ang) * r * 0.6, GROUND_Y + 4 + Math.sin(ang) * r * 0.12);
+          ctx.lineTo(x + Math.cos(ang + 0.3) * r, GROUND_Y + 4 + Math.sin(ang + 0.3) * r * 0.22);
+        }
+        ctx.stroke();
+        ctx.restore();
+        if (p.delay % 3 === 0) this.fx.smokePuff(p.x + rand(-20, 20), GROUND_Y - 6, 10, 0.4);
+        continue;
+      }
       ctx.fillStyle = `rgba(125,255,106,${a})`;
       ctx.beginPath();
       ctx.ellipse(p.x - camX, GROUND_Y + 4, 40, 9, 0, 0, Math.PI * 2);
@@ -860,7 +972,18 @@ const Game = {
 
   drawFatalityFx(camX) {
     const w = this.winner, l = this.loser, F = this.fatal, st = this.st;
-    if (st > 8 && st < 80 && F.mode !== 'decap' && F.mode !== 'soul') {
+    if (this.fatalChain) {
+      // cadena de KAIZEN: sale de su mano y se clava en el pecho del rival
+      const [hx, hy] = this.hookHand(w), ex = l.x - w.facing * 4, ey = l.y - 125, k = this.fatalChain.k;
+      const tx = lerp(hx, ex, k), ty = lerp(hy, ey, k), pts = [];
+      const slack = this.fatalChain.out && k < 1 ? 14 : 3;
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        pts.push(lerp(hx, tx, t) - camX, lerp(hy, ty, t) + Math.sin(t * Math.PI) * slack * Math.sin(this.t * 0.8 + t * 7));
+      }
+      this.drawLanza(pts, w.facing > 0 ? 0 : Math.PI);
+    }
+    if (st > 8 && st < 80 && F.mode !== 'decap' && F.mode !== 'soul' && F.mode !== 'cadenas') {
       const x1 = w.x - camX + w.facing * 62, y1 = w.y - 140, x2 = l.x - camX, y2 = l.y - 110;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
@@ -1062,6 +1185,31 @@ const Game = {
           ctx.fillStyle = '#e8f8d8'; circle(ctx, x, y - 2, 11); ctx.fillRect(x - 6, y + 4, 12, 7);
           ctx.fillStyle = '#103008'; circle(ctx, x + d * 4, y - 3, 3); circle(ctx, x - d * 3, y - 3, 3);
           break;
+        case 'fireball': {
+          // núcleo incandescente; las llamas y el humo son partículas (projTrail)
+          ctx.shadowBlur = 0;
+          ctx.globalCompositeOperation = 'lighter';
+          const fl = FLAME_SPRITES();
+          for (let i = 0; i < 4; i++) {
+            const s = 22 - i * 3 + Math.sin(p.t * 0.9 + i * 2) * 3;
+            ctx.drawImage(fl[i ? 1 : 0], x - d * i * 6 - s, y - s * 1.1 + Math.sin(p.t * 0.7 + i) * 2, s * 2, s * 2.2);
+          }
+          ctx.globalCompositeOperation = 'source-over';
+          break;
+        }
+        case 'firestorm': case 'lava': {
+          // resplandor de la columna de fuego (el fuego en sí son partículas)
+          ctx.shadowBlur = 0;
+          const life = p.spec.life || 20, fade = Math.min(1, p.t / 5, (life - p.t) / 8);
+          ctx.globalCompositeOperation = 'lighter';
+          const g = ctx.createRadialGradient(x, GROUND_Y - 110, 10, x, GROUND_Y - 110, 170);
+          g.addColorStop(0, `rgba(255,160,60,${0.35 * fade})`);
+          g.addColorStop(1, 'rgba(255,60,0,0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(x - 170, GROUND_Y - 280, 340, 300);
+          ctx.globalCompositeOperation = 'source-over';
+          break;
+        }
         case 'erupt': {
           const a = 1 - p.t / 15;
           const g = ctx.createLinearGradient(0, GROUND_Y, 0, GROUND_Y - 230);
@@ -1192,8 +1340,12 @@ const Game = {
     drawText(ctx, 'PAUSA', W / 2, 70, 70, fireGradient(ctx, 70, 70));
     this.drawControlsList(130);
     // especiales del jugador 1
-    const ch = this.f[0].ch;
-    drawText(ctx, `${ch.name}: ` + ch.specials.map(s => `${s.name} (${inputLabel(s)})`).join('  ·  '), W / 2, H - 62, 14, ch.color, 'center', null);
+    const ch = this.f[0].ch, items = ch.specials.map(s => `${s.name} (${inputLabel(s).replace(/  \(ULTRA.*\)/, '')})`);
+    if (items.length > 3) {
+      // en dos líneas si son muchos
+      drawText(ctx, `${ch.name}: ` + items.slice(0, 3).join('  ·  '), W / 2, H - 76, 12, ch.color, 'center', null);
+      drawText(ctx, items.slice(3).join('  ·  '), W / 2, H - 58, 12, ch.color, 'center', null);
+    } else drawText(ctx, `${ch.name}: ` + items.join('  ·  '), W / 2, H - 62, 14, ch.color, 'center', null);
     drawText(ctx, Touch.active ? '❚❚: CONTINUAR   ·   START: SALIR AL MENÚ'
       : 'ESC: CONTINUAR   ·   Q: SALIR AL MENÚ   ·   M: SONIDO', W / 2, H - 28, 22, '#ffd84a');
   },
@@ -1266,7 +1418,7 @@ const Game = {
       'CORRER: ADELANTE, ADELANTE (mantener)      AGARRE: cerca + ADELANTE + GB',
       'GANCHO: ↓ + GA     BARRIDA: ↓ + PA     GIRATORIA: ATRÁS + PA     AÉREOS: salto + golpe',
       `ESPECIALES (${COMBO_MODES[this.comboMode].name}): pulsa ATRÁS, luego ADELANTE, luego el golpe`,
-      'Cada guerrero tiene 2-3 ESPECIALES y su propia FATALITY (ver pantalla de selección)',
+      'Cada guerrero tiene sus ESPECIALES y su propia EJECUCIÓN (ver pantalla de selección)',
       Touch.active ? 'TÁCTIL: cruceta a la izquierda · GA PA GB PB y BLOQUEO a la derecha · ❚❚ pausa'
         : 'MANDO: cruceta/stick · Y=GA  X=GB  B=PA  A=PB · gatillos=bloqueo · START=confirmar',
     ];
@@ -1370,12 +1522,13 @@ const Game = {
     ctx.strokeStyle = '#5a3a1a';
     ctx.strokeRect(W / 2 - bw / 2, by, bw, 146);
     drawText(ctx, `MOVIMIENTOS DE ${ch.name}`, W / 2, by + 16, 18, '#ffd84a', 'center', null);
-    const many = ch.specials.length > 3;
+    // la lista se compacta si el guerrero tiene muchos especiales
+    const n = ch.specials.length, lay = n > 4 ? [34, 13.5, 13] : n > 3 ? [38, 17, 14] : [42, 22, 16];
     ch.specials.forEach((s, i) => {
-      const col = s.kind === 'ultra' ? '#bfefff' : ch.color === '#eef2f8' ? '#dfe8ff' : ch.color;
-      drawText(ctx, `${s.name.toUpperCase()}:  ${inputLabel(s)}`, W / 2, by + (many ? 38 : 42) + i * (many ? 17 : 22), many ? 14 : 16, col);
+      const col = s.kind === 'ultra' ? (ch.id === 'kaizen' ? '#ffcc60' : '#bfefff') : ch.color === '#eef2f8' ? '#dfe8ff' : ch.color;
+      drawText(ctx, `${s.name.toUpperCase()}:  ${inputLabel(s)}`, W / 2, by + lay[0] + i * lay[1], lay[2], col);
     });
-    drawText(ctx, `FATALITY (${FATAL_FX[ch.fatal.fx].name}):  ${inputLabel(ch.fatal)}`, W / 2, by + 112, 15, '#ff4a3a');
+    drawText(ctx, `EJECUCIÓN (${FATAL_FX[ch.fatal.fx].name}):  ${inputLabel(ch.fatal)}`, W / 2, by + 115, 15, '#ff4a3a');
     const help = Touch.active ? 'GA o START: confirmar · ❚❚: volver'
       : this.mode === 2 ? 'P1: F confirma · P2: I confirma · ESC: volver' : 'ENTER o F: confirmar · ESC: volver';
     drawText(ctx, `${help}   ·   Combos ${COMBO_MODES[this.comboMode].name.toLowerCase()}`, W / 2, by + 134, 13, '#999', 'center', null);

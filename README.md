@@ -62,15 +62,15 @@ Juega con el teléfono en horizontal. Versión publicada: https://claude.ai/arti
 - **Patada giratoria:** Atrás + PA
 - **Ataques aéreos:** saltar + cualquier golpe/patada (se bloquean solo de pie)
 - **Combos:** si un golpe conecta, puedes encadenar hasta 2 golpes más y rematar con un especial
-- **FATALITY:** cuando aparece **¡ACÁBALO!**, acércate y haz la secuencia de tu personaje
+- **EJECUCIÓN:** cuando aparece **¡ACÁBALO!**, acércate y haz la secuencia de tu personaje para rematarlo
 
 ## Personajes (12)
 
 Las entradas son relativas a hacia dónde miras (ATRÁS / ADELANTE / ABAJO).
 
-| Guerrero | Especiales | Fatality |
+| Guerrero | Especiales | Ejecución |
 |----------|-----------|----------|
-| **KAIZEN** (ninja espectro) | Lanza Infernal (Atrás, Adelante + GA) · Teletransporte (Abajo, Atrás + GA) | Aliento Infernal: Abajo, Abajo + GA |
+| **KAIZEN** (guerrero de lava, en 3D) | Lanza Infernal (Atrás, Adelante + GA) · Teletransporte (Abajo, Atrás + GA) · Bola de Fuego (Abajo, Adelante + GB) · Puño Volcánico (Atrás, Adelante + PB) · Erupción de Lava (Abajo, Abajo + PB) · **ULTRA** Infierno Desatado (Abajo, Atrás, Adelante + PA) | Infierno Encadenado: Abajo, Abajo + GA |
 | **GLACIAR** (guerrero de hielo) | Proyectil de Hielo (Abajo, Adelante + GB) · Pared de Hielo (Abajo, Abajo + GA) · Deslizamiento de Hielo (Atrás, Adelante + PB) · **ULTRA** Tormenta de Hielo (Abajo, Atrás, Adelante + PA) | Congelación Total: Adelante, Adelante + PB |
 | **VENENO** (reptil) | Escupitajo Ácido (Atrás, Adelante + GA) · Deslizamiento (Atrás, Adelante + PB) · Invisibilidad (Abajo, Atrás + PA) | Baño de Ácido: Atrás, Atrás + GB |
 | **HUMO** (ninja de humo) | Nube Tóxica (Atrás, Adelante + GA) · Paso de Humo (Abajo, Atrás + PB) | Asfixia: Abajo, Abajo + PB |
@@ -105,13 +105,13 @@ cuando les queda **40 % de vida o menos**. Cuando está disponible aparece **ULT
 | `js/ai.js`      | Inteligencia del CPU                                             |
 | `js/fx.js`      | Partículas: sangre, chispas, humo, restos, esqueletos            |
 | `js/stage.js`   | Escenario con parallax, antorchas y luna                         |
-| `js/game.js`    | Bucle principal, rondas, ¡ACÁBALO!, FATALITY, HUD y menús        |
+| `js/game.js`    | Bucle principal, rondas, ¡ACÁBALO!, ejecuciones, HUD y menús     |
 
 ### Ideas para modificarlo
 
 - **Nuevo personaje:** agrega una entrada en `CHARACTERS` (`js/data.js`): colores, aspecto (`look`:
   cabeza `hood`/`hair`/`bald`/`hat`/`helmet`/`bun`/`long`, torso `vest`/`bare`/`robe`/`armor`, brazos,
-  tamaño `bulk`), postura (`stance`), especiales y fatality. Los especiales combinan tipos ya hechos:
+  tamaño `bulk`), postura (`stance`), especiales y ejecución. Los especiales combinan tipos ya hechos:
   `proj` (cualquier proyectil de `PROJ`), `dash` (cualquier ataque de `DASH`), `tele`, `grab`, `erupt`, `invis`.
 - **Balance:** cambia `dmg`, `startup`, `recovery` en `MOVES`.
 - **Dificultad:** ajusta `AI_LEVELS` (reacción, probabilidad de bloqueo, agresividad).

@@ -16,8 +16,12 @@ const CHARACTERS = [
     specials: [
       { name: 'Lanza Infernal', input: ['B', 'F'], btn: 'hp', kind: 'proj', proj: 'lanza', ai: 'far' },
       { name: 'Teletransporte', input: ['D', 'B'], btn: 'hp', kind: 'tele', attack: 'hp', ai: 'mid' },
+      { name: 'Bola de Fuego', input: ['D', 'F'], btn: 'lp', kind: 'proj', proj: 'infierno', ai: 'far' },
+      { name: 'Puño Volcánico', input: ['B', 'F'], btn: 'lk', kind: 'dash', dash: 'volcan', trail: '#ff7a1a', ai: 'mid' },
+      { name: 'Erupción de Lava', input: ['D', 'D'], btn: 'lk', kind: 'erupt', erupt: 'lava', ai: 'mid' },
+      { name: 'Infierno Desatado', input: ['D', 'B', 'F'], btn: 'hk', kind: 'ultra', proj: 'llamarada', ai: 'ultra' },
     ],
-    fatal: { input: ['D', 'D'], btn: 'hp', fx: 'fire' } },
+    fatal: { input: ['D', 'D'], btn: 'hp', fx: 'cadenas' } },
 
   { id: 'glaciar', name: 'GLACIAR', color: '#2f6fd8', dark: '#13305e', skin: '#d9a982', eyes: '#cfe8ff', glow: true,
     look: { head: 'ponytail', torso: 'gi', arms: 'warrior', pants: '#141418', boots: '#22262e', hair: '#0e0e12',
@@ -169,6 +173,8 @@ const DASH = {
   charge:   { pose: 'charge', speed: 10, dur: 18, startup: 6, dmg: 11, hit: { x: 10, y: -150, w: 62, h: 110 }, level: 'mid', knock: true, heavy: true, trail: true },
   torpedo:  { pose: 'torpedo', speed: 13, dur: 30, startup: 8, dmg: 12, hit: { x: 0, y: -150, w: 104, h: 70 }, level: 'mid', knock: true, air: 70, trail: true, heavy: true },
   flypunch: { pose: 'flypunch', speed: 10, dur: 22, startup: 8, dmg: 10, hit: { x: 10, y: -140, w: 82, h: 72 }, level: 'overhead', knock: true, air: 100, trail: true },
+  // KAIZEN: puñetazo en llamas que cruza la pantalla
+  volcan:   { pose: 'flypunch', speed: 11.5, dur: 20, startup: 8, dmg: 11, hit: { x: 10, y: -150, w: 86, h: 80 }, level: 'mid', knock: true, air: 40, fire: true },
   spin:     { pose: 'spin', speed: 6, dur: 36, startup: 6, dmg: 4, hit: { x: -20, y: -170, w: 112, h: 120 }, level: 'mid', multi: true, every: 12, effect: 'daze', spin: true },
 };
 
@@ -182,6 +188,10 @@ const PROJ = {
   // ULTRA: tornado de hielo sobre el rival, varios golpes imbloqueables y congelación final
   tormenta:  { speed: 0,  dmg: 4,  w: 150, h: 260, color: '#bfefff', effect: 'stun', stun: 22, style: 'storm', atTarget: true,
                y: -130, life: 50, multi: 8, unblockable: true, finalFreeze: true, noClash: true },
+  // KAIZEN: bola de fuego realista y ULTRA de llamaradas sobre el rival (golpes imbloqueables y sale despedido)
+  infierno:  { speed: 10, dmg: 9, w: 40, h: 36, color: '#ff8a1e', effect: 'stun', stun: 22, style: 'fireball', pose: 'cast' },
+  llamarada: { speed: 0,  dmg: 5, w: 150, h: 260, color: '#ff7a1a', effect: 'stun', stun: 22, style: 'firestorm', atTarget: true,
+               y: -130, life: 56, multi: 8, unblockable: true, finalLaunch: true, noClash: true },
   acido:     { speed: 7,  dmg: 12, w: 34, h: 28, color: '#7dff4a', effect: 'stun', stun: 26, style: 'acid' },
   rayo:      { speed: 17, dmg: 9,  w: 60, h: 22, color: '#bff4ff', effect: 'knock', style: 'bolt', pose: 'cast' },
   fuego:     { speed: 10, dmg: 10, w: 42, h: 36, color: '#ff8a1e', effect: 'knock', style: 'fire' },
@@ -200,9 +210,11 @@ const PROJ = {
                offsets: [-125, -95, -155], pose: 'cast', recovery: 34 },
 };
 
-// Fatalities: mode define la animación final.
+// Ejecuciones (golpe final): mode define la animación final.
 const FATAL_FX = {
   fire:   { name: 'ALIENTO INFERNAL',  color: '#ff7a1a', tint: '#ff5a00', mode: 'burn' },
+  // KAIZEN: lo engancha con la cadena, lo envuelve en fuego y lo reduce a cenizas
+  cadenas: { name: 'INFIERNO ENCADENADO', color: '#ff7a1a', tint: null, mode: 'cadenas' },
   ice:    { name: 'CONGELACIÓN TOTAL', color: '#a8e6ff', tint: '#bfefff', mode: 'shatter' },
   acid:   { name: 'BAÑO DE ÁCIDO',     color: '#7dff4a', tint: '#5fd030', mode: 'melt' },
   smoke:  { name: 'ASFIXIA',           color: '#c8ccd0', tint: '#8a9098', mode: 'burn' },
